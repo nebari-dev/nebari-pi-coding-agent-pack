@@ -1,0 +1,98 @@
+# values-local.yaml
+# Ready-to-use baseline for the RECREATE.md local flow (k3d + data-science namespace).
+#
+# Install example:
+# helm upgrade --install data-science-pack PACKS/nebari-pi-pack \
+#   --namespace data-science \
+#   -f PACKS/nebari-pi-pack/examples/values-local.yaml \
+#   --wait --timeout 40m
+
+nebariapp:
+  enabled: true
+  hostname: jupyter.nebari.local
+  service:
+    name: proxy-public
+    port: 80
+  auth:
+    enabled: true
+    provider: keycloak
+    provisionClient: true
+    redirectURI: /hub/oauth_callback
+    scopes:
+      - openid
+      - profile
+      - email
+      - groups
+
+pi:
+  enabled: true
+
+  # Set this to your actual Pi runtime image.
+  # This image should include Pi CLI + ttyd runtime expected by Pi profiles.
+  image:
+    repository: quay.io/nebari/pi-agent
+    tag: latest
+
+  launcher:
+    serviceName: pi-launcher
+    port: 10300
+    liveShareEnabled: false
+
+  sharing:
+    enabled: true
+    sessionMaxBytes: 1048576
+
+  sharedSkills:
+    enabled: true
+    mode: pvc-subpath
+    pvcName: shared-storage
+    pvcSubPath: shared-skills
+    sync:
+      enabled: true
+      releaseId: ""
+      source:
+        type: url
+        url: https://github.com/nenb/nebari-agent-skills/releases/latest/download/shared-skills.tar.gz
+        sha256: ""
+
+relay:
+  enabled: false
+
+jupyterhub:
+  # Local reliability defaults: avoid image pre-puller churn.
+  prePuller:
+    hook:
+      enabled: false
+    continuous:
+      enabled: false
+
+  singleuser:
+    image:
+      pullPolicy: IfNotPresent
+
+  custom:
+    # Keep localhost-friendly behavior from RECREATE flow.
+    external-url: ""
+
+    # Keep in sync with pi.image above.
+    pi-image: quay.io/nebari/pi-agent:latest
+
+    pi-launcher-port: 10300
+    pi-launcher-service-name: pi-launcher
+    pi-live-share-enabled: false
+
+    # Optional; blank lets launcher infer namespace from pod context.
+    pi-sharing-namespace: data-science
+
+    pi-share-session-max-bytes: 1048576
+    pi-hub-api-url: http://hub:8081/hub/api
+    pi-proxy-url: http://proxy-public
+    pi-coding-agent-dir: /tmp/pi-agent
+    pi-m4-tools-service-name: pi-m4-tools
+
+  hub:
+    # Make shared-skills mode explicit in Hub env.
+    extraEnv:
+      NEBARI_SHARED_SKILLS_MODE: pvc-subpath
+      NEBARI_SHARED_SKILLS_PVC_NAME: shared-storage
+      NEBARI_SHARED_SKILLS_PVC_SUBPATH: shared-skills

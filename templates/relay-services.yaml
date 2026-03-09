@@ -1,0 +1,65 @@
+{{- if and .Values.pi.enabled .Values.relay.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.relay.core.serviceName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: relay-core
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Values.relay.core.deploymentName }}
+  ports:
+    - name: http
+      port: {{ .Values.relay.core.port }}
+      targetPort: {{ .Values.relay.core.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.relay.dummy.serviceName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: relay-dummy
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Values.relay.dummy.deploymentName }}
+  ports:
+    - name: http
+      port: {{ .Values.relay.dummy.port }}
+      targetPort: {{ .Values.relay.dummy.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.relay.slack.serviceName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: relay-slack
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Values.relay.slack.deploymentName }}
+  ports:
+    - name: http
+      port: {{ .Values.relay.slack.port }}
+      targetPort: {{ .Values.relay.slack.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.relay.whatsapp.serviceName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: relay-whatsapp
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Values.relay.whatsapp.deploymentName }}
+  ports:
+    - name: http
+      port: {{ .Values.relay.whatsapp.port }}
+      targetPort: {{ .Values.relay.whatsapp.port }}
+{{- end }}

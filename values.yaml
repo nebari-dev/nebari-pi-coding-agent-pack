@@ -1,0 +1,312 @@
+# Default values for nebari-pi-pack
+
+# Name used by templates/hub-config.yaml and referenced by jupyterhub.hub.extraVolumes.
+hubConfigMapName: pi-pack-hub-config
+
+# =============================================================================
+# Nebari Integration
+# =============================================================================
+nebariapp:
+  enabled: true
+  # hostname: jupyter.nebari.local
+  service:
+    name: proxy-public
+    port: 80
+  auth:
+    enabled: true
+    provider: keycloak
+    provisionClient: true
+    redirectURI: /hub/oauth_callback
+    scopes:
+      - openid
+      - profile
+      - email
+      - groups
+
+# Shared storage configuration (optional chart-level PVC)
+sharedStorage:
+  enabled: true
+  storageClass: ""
+  size: 10Gi
+  accessModes:
+    - ReadWriteOnce
+
+# =============================================================================
+# Pi features (chart-level)
+# =============================================================================
+pi:
+  enabled: true
+
+  launcher:
+    serviceName: pi-launcher
+    port: 10300
+    liveShareEnabled: false
+
+  sharing:
+    enabled: true
+    sessionMaxBytes: 1048576
+
+  m4Tools:
+    serviceName: pi-m4-tools
+    createTokenSecret: true
+    tokenSecretName: pi-pack-pi-secrets
+
+  image:
+    repository: quay.io/nebari/pi-agent
+    tag: latest
+
+  profiles:
+    small:
+      display_name: Pi Small
+      description: Pi agent (2 cpu / 8 GB ram)
+      cpu_limit: 2
+      cpu_guarantee: 1.5
+      mem_limit: 8G
+      mem_guarantee: 5G
+    medium:
+      display_name: Pi Medium
+      description: Pi agent (4 cpu / 16 GB ram)
+      cpu_limit: 4
+      cpu_guarantee: 3
+      mem_limit: 16G
+      mem_guarantee: 10G
+    large:
+      display_name: Pi Large
+      description: Pi agent (8 cpu / 32 GB ram)
+      cpu_limit: 8
+      cpu_guarantee: 6
+      mem_limit: 32G
+      mem_guarantee: 24G
+
+  sharedSkills:
+    enabled: true
+    # Only pvc-subpath mode is supported.
+    mode: pvc-subpath
+    pvcName: shared-storage
+    pvcSubPath: shared-skills
+    # Chart-managed sync/rotation pipeline for immutable URL artifacts.
+    sync:
+      enabled: true
+      releaseId: "" # defaults to helm-r<revision>
+      keepReleases: 5
+      pvcMountPath: /mnt/share
+      source:
+        # URL artifact is the only supported source mode.
+        # Recommended: pin to immutable release URL + SHA256.
+        type: url
+        # Example points at the nenb skills repo latest release asset.
+        url: "https://github.com/nenb/nebari-agent-skills/releases/latest/download/shared-skills.tar.gz"
+        # Optional SHA256 for archive integrity verification.
+        sha256: ""
+        # Optional Bearer token auth for private artifact endpoints.
+        auth:
+          secretName: ""
+          tokenKey: token
+      job:
+        image: alpine:3.20
+
+# =============================================================================
+# Relay subsystem (optional)
+# =============================================================================
+relay:
+  enabled: false
+  deployMode: configmap # configmap | image
+  host: ""
+  configMapName: ""
+  secretName: ""
+  codeConfigMapName: pi-relay-code
+
+  # mapping of channel/workspace sender ids -> Nebari usernames
+  # examples:
+  # messageUserMap:
+  #   "dummy:test-user-1": "alice"
+  #   "slack:T123:U123": "alice"
+  messageUserMap: {}
+
+  nebariapp:
+    enabled: false
+    hostname: ""
+    auth:
+      enabled: false
+      provider: keycloak
+      provisionClient: true
+      redirectURI: /oauth2/callback
+
+  core:
+    deploymentName: pi-relay-core
+    serviceName: pi-relay-core
+    serviceAccountName: pi-relay-core
+    replicas: 1
+    port: 8788
+    image: quay.io/nebari/pi-relay-core:latest
+    kubectlBin: /usr/local/bin/kubectl
+    # Use Pi M4 tooling token as relay Hub API token source by default.
+    # Set to false to use relay secret key NEBARI_HUB_API_TOKEN instead.
+    usePiM4Token: true
+    hubApiUrl: http://hub:8081/hub/api
+    hubApiToken: ""
+    # Relay idempotency/state volume config
+    # storageType: emptyDir | pvc
+    storageType: emptyDir
+    statePvcName: ""
+    stateSubPath: relay-state
+    piServerName: pi
+    defaultProfile: pi-small
+    piAgentDir: /tmp/pi-agent
+    idempotencyBackend: sqlite
+    idempotencyPath: /var/lib/relay/idempotency.db
+    asyncQueueEnabled: true
+    queueWorkers: 2
+
+  dummy:
+    deploymentName: pi-relay-dummy-adapter
+    serviceName: pi-relay-dummy-adapter
+    replicas: 1
+    port: 8790
+    image: quay.io/nebari/pi-relay-dummy-adapter:latest
+    path: /relay/dummy/simulate
+    statusPath: /relay/dummy/status
+
+  slack:
+    deploymentName: pi-relay-slack-adapter
+    serviceName: pi-relay-slack-adapter
+    replicas: 1
+    port: 8791
+    image: quay.io/nebari/pi-relay-slack-adapter:latest
+    path: /relay/slack/events
+    signingSecret: ""
+
+  whatsapp:
+    deploymentName: pi-relay-whatsapp-adapter
+    serviceName: pi-relay-whatsapp-adapter
+    replicas: 1
+    port: 8792
+    image: quay.io/nebari/pi-relay-whatsapp-adapter:latest
+    path: /relay/whatsapp/webhook
+    appSecret: ""
+    verifyToken: ""
+
+# =============================================================================
+# JupyterHub
+# =============================================================================
+jupyterhub:
+  custom:
+    external-url: ""
+
+    # jhub-apps config passthrough
+    japps-config:
+      hub_host: "hub"
+      service_workers: 4
+
+    # values consumed by 05-pi-launcher.py / 08-pi-home-and-spawn-fixes.py
+    pi-launcher-port: 10300
+    pi-launcher-service-name: pi-launcher
+    pi-live-share-enabled: false
+    pi-sharing-namespace: ""
+    pi-share-session-max-bytes: 1048576
+    pi-image: quay.io/nebari/pi-agent:latest
+    pi-hub-api-url: http://hub:8081/hub/api
+    pi-proxy-url: http://proxy-public
+    pi-coding-agent-dir: /tmp/pi-agent
+    pi-m4-tools-service-name: pi-m4-tools
+    pi-profiles:
+      small:
+        display_name: Pi Small
+        description: Pi agent (2 cpu / 8 GB ram)
+        cpu_limit: 2
+        cpu_guarantee: 1.5
+        mem_limit: 8G
+        mem_guarantee: 5G
+      medium:
+        display_name: Pi Medium
+        description: Pi agent (4 cpu / 16 GB ram)
+        cpu_limit: 4
+        cpu_guarantee: 3
+        mem_limit: 16G
+        mem_guarantee: 10G
+      large:
+        display_name: Pi Large
+        description: Pi agent (8 cpu / 32 GB ram)
+        cpu_limit: 8
+        cpu_guarantee: 6
+        mem_limit: 32G
+        mem_guarantee: 24G
+
+  hub:
+    image:
+      # Reuse known-working data-science hub image
+      name: quay.io/nebari/nebari-data-science-pack-jupyterhub@sha256
+      tag: "4a3ddf08d87736d3de5a8d1d520ed5038e3bd3c0d4e029cd3452e7e7fbced3a2"
+
+    config:
+      JupyterHub:
+        admin_access: true
+        authenticator_class: dummy
+
+    extraEnv:
+      PI_M4_TOOLS_API_TOKEN:
+        valueFrom:
+          secretKeyRef:
+            name: pi-pack-pi-secrets
+            key: api-token
+      NEBARI_SHARED_SKILLS_MODE: pvc-subpath
+      NEBARI_SHARED_SKILLS_PVC_NAME: shared-storage
+      NEBARI_SHARED_SKILLS_PVC_SUBPATH: shared-skills
+
+    extraVolumes:
+      - name: custom-config
+        configMap:
+          name: pi-pack-hub-config
+
+    extraVolumeMounts:
+      - name: custom-config
+        mountPath: /usr/local/etc/jupyterhub/jupyterhub_config.d/
+
+    service:
+      extraPorts:
+        - port: 10202
+          targetPort: 10202
+          name: jhub-apps
+        - port: 10300
+          targetPort: 10300
+          name: pi-launcher
+
+    networkPolicy:
+      enabled: true
+      ingress:
+        - ports:
+            - port: 10202
+            - port: 10300
+
+  singleuser:
+    image:
+      # Reuse known-working data-science singleuser image for non-pi profiles
+      name: quay.io/nebari/nebari-data-science-pack-jupyterlab
+      tag: latest
+    defaultUrl: /lab
+    extraEnv:
+      JUPYTERHUB_SINGLEUSER_APP: jupyter_server.serverapp.ServerApp
+    storage:
+      type: none
+
+  proxy:
+    service:
+      type: ClusterIP
+    chp:
+      networkPolicy:
+        egress:
+          - ports:
+              - port: 10202
+                protocol: TCP
+          - ports:
+              - port: 10300
+                protocol: TCP
+
+  scheduling:
+    userScheduler:
+      enabled: false
+
+  cull:
+    enabled: true
+    timeout: 3600
+    every: 300

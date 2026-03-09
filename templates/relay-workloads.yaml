@@ -1,0 +1,396 @@
+{{- if and .Values.pi.enabled .Values.relay.enabled }}
+{{- $secretName := include "nebari-pi-pack.relay-secret-name" . -}}
+{{- $existingSecret := lookup "v1" "Secret" .Release.Namespace $secretName -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nebari-pi-pack.relay-config-name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+data:
+  NEBARI_HUB_API_URL: {{ .Values.relay.core.hubApiUrl | quote }}
+  MESSAGE_USER_MAP: {{ .Values.relay.messageUserMap | toJson | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+    argocd.argoproj.io/sync-options: Prune=false,Replace=false
+type: Opaque
+stringData:
+  {{- if $existingSecret }}
+  RELAY_ADAPTER_TOKEN: {{ index $existingSecret.data "RELAY_ADAPTER_TOKEN" | b64dec | quote }}
+  DUMMY_ADAPTER_INGRESS_TOKEN: {{ index $existingSecret.data "DUMMY_ADAPTER_INGRESS_TOKEN" | b64dec | quote }}
+  NEBARI_HUB_API_TOKEN: {{ index $existingSecret.data "NEBARI_HUB_API_TOKEN" | b64dec | quote }}
+  SLACK_SIGNING_SECRET: {{ index $existingSecret.data "SLACK_SIGNING_SECRET" | b64dec | quote }}
+  WHATSAPP_APP_SECRET: {{ index $existingSecret.data "WHATSAPP_APP_SECRET" | b64dec | quote }}
+  WHATSAPP_VERIFY_TOKEN: {{ index $existingSecret.data "WHATSAPP_VERIFY_TOKEN" | b64dec | quote }}
+  {{- else }}
+  RELAY_ADAPTER_TOKEN: {{ randAlphaNum 48 | quote }}
+  DUMMY_ADAPTER_INGRESS_TOKEN: {{ randAlphaNum 48 | quote }}
+  NEBARI_HUB_API_TOKEN: {{ .Values.relay.core.hubApiToken | default "replace-nebari-hub-api-token" | quote }}
+  SLACK_SIGNING_SECRET: {{ .Values.relay.slack.signingSecret | default "replace-slack-signing-secret" | quote }}
+  WHATSAPP_APP_SECRET: {{ .Values.relay.whatsapp.appSecret | default "replace-whatsapp-app-secret" | quote }}
+  WHATSAPP_VERIFY_TOKEN: {{ .Values.relay.whatsapp.verifyToken | default "replace-whatsapp-verify-token" | quote }}
+  {{- end }}
+{{- if eq .Values.relay.deployMode "configmap" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.relay.codeConfigMapName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+data:
+  relay_server.py: |
+{{ .Files.Get "relay/relay_server.py" | indent 4 }}
+  adapter_common.py: |
+{{ .Files.Get "relay/adapter_common.py" | indent 4 }}
+  dummy_adapter.py: |
+{{ .Files.Get "relay/dummy_adapter.py" | indent 4 }}
+  slack_adapter.py: |
+{{ .Files.Get "relay/slack_adapter.py" | indent 4 }}
+  whatsapp_adapter.py: |
+{{ .Files.Get "relay/whatsapp_adapter.py" | indent 4 }}
+  install-kubectl-and-run-relay.sh: |
+{{ .Files.Get "relay/install-kubectl-and-run-relay.sh" | indent 4 }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.relay.core.deploymentName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.relay.core.deploymentName }}
+spec:
+  replicas: {{ .Values.relay.core.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.relay.core.deploymentName }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.relay.core.deploymentName }}
+    spec:
+      serviceAccountName: {{ .Values.relay.core.serviceAccountName }}
+      containers:
+        - name: relay
+          image: {{ if eq .Values.relay.deployMode "image" }}{{ .Values.relay.core.image }}{{ else }}python:3.12-slim{{ end }}
+          imagePullPolicy: IfNotPresent
+          {{- if eq .Values.relay.deployMode "configmap" }}
+          command: ["sh", "/opt/relay/app/install-kubectl-and-run-relay.sh"]
+          {{- end }}
+          env:
+            - name: RELAY_HOST
+              value: 0.0.0.0
+            - name: RELAY_PORT
+              value: {{ .Values.relay.core.port | quote }}
+            - name: NEBARI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NEBARI_PI_SERVER_NAME
+              value: {{ .Values.relay.core.piServerName | quote }}
+            - name: NEBARI_PI_PROFILE
+              value: {{ .Values.relay.core.defaultProfile | quote }}
+            - name: NEBARI_PI_AGENT_DIR
+              value: {{ .Values.relay.core.piAgentDir | default "/tmp/pi-agent" | quote }}
+            - name: KUBECTL_BIN
+              value: {{ if eq .Values.relay.deployMode "image" }}{{ .Values.relay.core.kubectlBin | quote }}{{ else }}"/opt/relay/bin/kubectl"{{ end }}
+            - name: KUBECONFIG
+              value: ""
+            - name: RELAY_ADAPTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: RELAY_ADAPTER_TOKEN
+            - name: NEBARI_HUB_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.relay.core.usePiM4Token }}{{ include "nebari-pi-pack.pi-secret-name" . }}{{ else }}{{ $secretName }}{{ end }}
+                  key: {{ if .Values.relay.core.usePiM4Token }}api-token{{ else }}NEBARI_HUB_API_TOKEN{{ end }}
+            - name: NEBARI_HUB_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "nebari-pi-pack.relay-config-name" . }}
+                  key: NEBARI_HUB_API_URL
+            - name: MESSAGE_USER_MAP
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "nebari-pi-pack.relay-config-name" . }}
+                  key: MESSAGE_USER_MAP
+            - name: RELAY_IDEMPOTENCY_BACKEND
+              value: {{ .Values.relay.core.idempotencyBackend | quote }}
+            - name: RELAY_IDEMPOTENCY_SQLITE_PATH
+              value: {{ .Values.relay.core.idempotencyPath | quote }}
+            - name: RELAY_ASYNC_QUEUE_ENABLED
+              value: {{ ternary "true" "false" .Values.relay.core.asyncQueueEnabled | quote }}
+            - name: RELAY_QUEUE_WORKERS
+              value: {{ .Values.relay.core.queueWorkers | quote }}
+          ports:
+            - containerPort: {{ .Values.relay.core.port }}
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          volumeMounts:
+            {{- if eq .Values.relay.deployMode "configmap" }}
+            - name: relay-code
+              mountPath: /opt/relay/app
+              readOnly: true
+            - name: relay-bin
+              mountPath: /opt/relay/bin
+            {{- end }}
+            - name: relay-state
+              mountPath: /var/lib/relay
+              {{- if eq .Values.relay.core.storageType "pvc" }}
+              subPath: {{ .Values.relay.core.stateSubPath | quote }}
+              {{- end }}
+      volumes:
+        {{- if eq .Values.relay.deployMode "configmap" }}
+        - name: relay-code
+          configMap:
+            name: {{ .Values.relay.codeConfigMapName }}
+            defaultMode: 0555
+        - name: relay-bin
+          emptyDir: {}
+        {{- end }}
+        - name: relay-state
+          {{- if eq .Values.relay.core.storageType "pvc" }}
+          persistentVolumeClaim:
+            claimName: {{ required "relay.core.statePvcName is required when relay.core.storageType=pvc" .Values.relay.core.statePvcName }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.relay.dummy.deploymentName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.relay.dummy.deploymentName }}
+spec:
+  replicas: {{ .Values.relay.dummy.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.relay.dummy.deploymentName }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.relay.dummy.deploymentName }}
+    spec:
+      containers:
+        - name: dummy-adapter
+          image: {{ if eq .Values.relay.deployMode "image" }}{{ .Values.relay.dummy.image }}{{ else }}python:3.12-slim{{ end }}
+          imagePullPolicy: IfNotPresent
+          {{- if eq .Values.relay.deployMode "configmap" }}
+          command: ["python3", "/opt/relay/app/dummy_adapter.py"]
+          {{- end }}
+          env:
+            - name: DUMMY_ADAPTER_HOST
+              value: 0.0.0.0
+            - name: DUMMY_ADAPTER_PORT
+              value: {{ .Values.relay.dummy.port | quote }}
+            - name: DUMMY_ADAPTER_PATH
+              value: {{ .Values.relay.dummy.path | quote }}
+            - name: DUMMY_ADAPTER_STATUS_PATH
+              value: {{ .Values.relay.dummy.statusPath | quote }}
+            - name: RELAY_API_URL
+              value: http://{{ .Values.relay.core.serviceName }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.relay.core.port }}/v1/messages
+            - name: RELAY_STATUS_URL
+              value: http://{{ .Values.relay.core.serviceName }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.relay.core.port }}/v1/messages/status
+            - name: RELAY_ADAPTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: RELAY_ADAPTER_TOKEN
+            - name: DUMMY_ADAPTER_INGRESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: DUMMY_ADAPTER_INGRESS_TOKEN
+          ports:
+            - containerPort: {{ .Values.relay.dummy.port }}
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          {{- if eq .Values.relay.deployMode "configmap" }}
+          volumeMounts:
+            - name: relay-code
+              mountPath: /opt/relay/app
+              readOnly: true
+          {{- end }}
+      {{- if eq .Values.relay.deployMode "configmap" }}
+      volumes:
+        - name: relay-code
+          configMap:
+            name: {{ .Values.relay.codeConfigMapName }}
+            defaultMode: 0555
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.relay.slack.deploymentName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.relay.slack.deploymentName }}
+spec:
+  replicas: {{ .Values.relay.slack.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.relay.slack.deploymentName }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.relay.slack.deploymentName }}
+    spec:
+      containers:
+        - name: slack-adapter
+          image: {{ if eq .Values.relay.deployMode "image" }}{{ .Values.relay.slack.image }}{{ else }}python:3.12-slim{{ end }}
+          imagePullPolicy: IfNotPresent
+          {{- if eq .Values.relay.deployMode "configmap" }}
+          command: ["python3", "/opt/relay/app/slack_adapter.py"]
+          {{- end }}
+          env:
+            - name: SLACK_ADAPTER_HOST
+              value: 0.0.0.0
+            - name: SLACK_ADAPTER_PORT
+              value: {{ .Values.relay.slack.port | quote }}
+            - name: SLACK_WEBHOOK_PATH
+              value: {{ .Values.relay.slack.path | quote }}
+            - name: RELAY_API_URL
+              value: http://{{ .Values.relay.core.serviceName }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.relay.core.port }}/v1/messages
+            - name: RELAY_ADAPTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: RELAY_ADAPTER_TOKEN
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: SLACK_SIGNING_SECRET
+          ports:
+            - containerPort: {{ .Values.relay.slack.port }}
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          {{- if eq .Values.relay.deployMode "configmap" }}
+          volumeMounts:
+            - name: relay-code
+              mountPath: /opt/relay/app
+              readOnly: true
+          {{- end }}
+      {{- if eq .Values.relay.deployMode "configmap" }}
+      volumes:
+        - name: relay-code
+          configMap:
+            name: {{ .Values.relay.codeConfigMapName }}
+            defaultMode: 0555
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.relay.whatsapp.deploymentName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.relay.whatsapp.deploymentName }}
+spec:
+  replicas: {{ .Values.relay.whatsapp.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.relay.whatsapp.deploymentName }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.relay.whatsapp.deploymentName }}
+    spec:
+      containers:
+        - name: whatsapp-adapter
+          image: {{ if eq .Values.relay.deployMode "image" }}{{ .Values.relay.whatsapp.image }}{{ else }}python:3.12-slim{{ end }}
+          imagePullPolicy: IfNotPresent
+          {{- if eq .Values.relay.deployMode "configmap" }}
+          command: ["python3", "/opt/relay/app/whatsapp_adapter.py"]
+          {{- end }}
+          env:
+            - name: WHATSAPP_ADAPTER_HOST
+              value: 0.0.0.0
+            - name: WHATSAPP_ADAPTER_PORT
+              value: {{ .Values.relay.whatsapp.port | quote }}
+            - name: WHATSAPP_WEBHOOK_PATH
+              value: {{ .Values.relay.whatsapp.path | quote }}
+            - name: RELAY_API_URL
+              value: http://{{ .Values.relay.core.serviceName }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.relay.core.port }}/v1/messages
+            - name: RELAY_ADAPTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: RELAY_ADAPTER_TOKEN
+            - name: WHATSAPP_APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: WHATSAPP_APP_SECRET
+            - name: WHATSAPP_VERIFY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: WHATSAPP_VERIFY_TOKEN
+          ports:
+            - containerPort: {{ .Values.relay.whatsapp.port }}
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          {{- if eq .Values.relay.deployMode "configmap" }}
+          volumeMounts:
+            - name: relay-code
+              mountPath: /opt/relay/app
+              readOnly: true
+          {{- end }}
+      {{- if eq .Values.relay.deployMode "configmap" }}
+      volumes:
+        - name: relay-code
+          configMap:
+            name: {{ .Values.relay.codeConfigMapName }}
+            defaultMode: 0555
+      {{- end }}
+{{- end }}

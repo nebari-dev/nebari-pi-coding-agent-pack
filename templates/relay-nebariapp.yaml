@@ -1,0 +1,25 @@
+{{- if and .Values.pi.enabled .Values.relay.enabled .Values.relay.nebariapp.enabled }}
+apiVersion: reconcilers.nebari.dev/v1
+kind: NebariApp
+metadata:
+  name: {{ include "nebari-pi-pack.fullname" . }}-relay
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+spec:
+  hostname: {{ required "relay.host (or relay.nebariapp.hostname) is required when relay.nebariapp.enabled is true" (default .Values.relay.host .Values.relay.nebariapp.hostname) }}
+  service:
+    name: {{ .Values.relay.dummy.serviceName }}
+    port: {{ .Values.relay.dummy.port }}
+  routing:
+    routes:
+      - pathPrefix: {{ .Values.relay.dummy.path | default "/relay/dummy/simulate" }}
+        pathType: Exact
+      - pathPrefix: {{ .Values.relay.dummy.statusPath | default "/relay/dummy/status" }}
+        pathType: Exact
+  auth:
+    enabled: {{ .Values.relay.nebariapp.auth.enabled | default false }}
+    provider: {{ .Values.relay.nebariapp.auth.provider | default "keycloak" }}
+    provisionClient: {{ .Values.relay.nebariapp.auth.provisionClient | default true }}
+    redirectURI: {{ .Values.relay.nebariapp.auth.redirectURI | default "/oauth2/callback" }}
+{{- end }}

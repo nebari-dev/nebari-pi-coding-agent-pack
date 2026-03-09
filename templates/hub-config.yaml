@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.hubConfigMapName }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+data:
+  00-gateway-auth.py: |
+{{ .Files.Get "config/jupyterhub/00-gateway-auth.py" | indent 4 }}
+  01-spawner.py: |
+{{ .Files.Get "config/jupyterhub/01-spawner.py" | indent 4 }}
+  02-jhub-apps.py: |
+{{ .Files.Get "config/jupyterhub/02-jhub-apps.py" | indent 4 }}
+{{- if .Values.pi.enabled }}
+  05-pi-launcher.py: |
+{{ .Files.Get "config/jupyterhub/05-pi-launcher.py" | indent 4 }}
+  08-pi-home-and-spawn-fixes.py: |
+{{ .Files.Get "config/jupyterhub/08-pi-home-and-spawn-fixes.py" | indent 4 }}
+{{- if .Values.pi.sharedSkills.enabled }}
+  09-shared-skills.py: |
+{{ .Files.Get "config/jupyterhub/09-shared-skills.py" | indent 4 }}
+{{- end }}
+{{- end }}
