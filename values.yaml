@@ -209,6 +209,10 @@ jupyterhub:
     pi-proxy-url: http://proxy-public
     pi-coding-agent-dir: /tmp/pi-agent
     pi-m4-tools-service-name: pi-m4-tools
+    # If true, Pi named-server pods run as root inside the container.
+    # This grants full in-container filesystem permissions for that user's pod.
+    # User isolation is still provided by per-user pods/PVCs.
+    pi-run-as-root: false
     pi-profiles:
       small:
         display_name: Pi Small

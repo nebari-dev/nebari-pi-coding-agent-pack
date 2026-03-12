@@ -579,6 +579,8 @@ if isinstance(_pi_profile_overrides, dict):
         if _size in PI_SPECS_BY_SIZE and isinstance(_override, dict):
             PI_SPECS_BY_SIZE[_size].update(_override)
 
+PI_RUN_AS_ROOT = bool(z2jh.get_config("custom.pi-run-as-root", False))
+
 code_server_bootstrap_script = textwrap.dedent(
     """
     set -u
@@ -685,6 +687,43 @@ def _clean_profile(profile):
     p["kubespawner_override"] = override
     return p
 
+def _apply_pi_root_access(override):
+    if not PI_RUN_AS_ROOT:
+        return override
+
+    if not isinstance(override, dict):
+        override = {}
+
+    override["uid"] = 0
+    override["gid"] = 0
+
+    container_cfg = copy.deepcopy(override.get("extra_container_config") or {})
+    if not isinstance(container_cfg, dict):
+        container_cfg = {}
+    sec_ctx = copy.deepcopy(container_cfg.get("securityContext") or {})
+    if not isinstance(sec_ctx, dict):
+        sec_ctx = {}
+    sec_ctx["runAsUser"] = 0
+    sec_ctx["runAsGroup"] = 0
+    sec_ctx["runAsNonRoot"] = False
+    # Keep this true for root shell workflows inside the user pod.
+    sec_ctx["allowPrivilegeEscalation"] = True
+    container_cfg["securityContext"] = sec_ctx
+    override["extra_container_config"] = container_cfg
+
+    pod_cfg = copy.deepcopy(override.get("extra_pod_config") or {})
+    if not isinstance(pod_cfg, dict):
+        pod_cfg = {}
+    pod_sec_ctx = copy.deepcopy(pod_cfg.get("securityContext") or {})
+    if not isinstance(pod_sec_ctx, dict):
+        pod_sec_ctx = {}
+    pod_sec_ctx["runAsNonRoot"] = False
+    pod_cfg["securityContext"] = pod_sec_ctx
+    override["extra_pod_config"] = pod_cfg
+
+    return override
+
+
 def _build_pi_profile_from_base(base_profile, size_key):
     spec = PI_SPECS_BY_SIZE.get(size_key) or {}
     p = copy.deepcopy(base_profile)
@@ -701,26 +740,29 @@ def _build_pi_profile_from_base(base_profile, size_key):
     override["cpu_guarantee"] = spec.get("cpu_guarantee")
     override["mem_limit"] = spec.get("mem_limit")
     override["mem_guarantee"] = spec.get("mem_guarantee")
+    override = _apply_pi_root_access(override)
     p["kubespawner_override"] = override
     return p
 
 
 def _build_pi_profile_minimal(size_key):
     spec = PI_SPECS_BY_SIZE.get(size_key) or {}
+    override = {
+        "environment": dict(PI_ENV),
+        "image": PI_IMAGE,
+        "cmd": PI_CMD,
+        "args": [],
+        "cpu_limit": spec.get("cpu_limit"),
+        "cpu_guarantee": spec.get("cpu_guarantee"),
+        "mem_limit": spec.get("mem_limit"),
+        "mem_guarantee": spec.get("mem_guarantee"),
+    }
+    override = _apply_pi_root_access(override)
     return {
         "display_name": spec.get("display_name", f"Pi {size_key.title()}"),
         "description": spec.get("description", ""),
         "default": size_key == "small",
-        "kubespawner_override": {
-            "environment": dict(PI_ENV),
-            "image": PI_IMAGE,
-            "cmd": PI_CMD,
-            "args": [],
-            "cpu_limit": spec.get("cpu_limit"),
-            "cpu_guarantee": spec.get("cpu_guarantee"),
-            "mem_limit": spec.get("mem_limit"),
-            "mem_guarantee": spec.get("mem_guarantee"),
-        },
+        "kubespawner_override": override,
     }
 
 async def _profile_list_without_nebula_pi_cli(spawner):
