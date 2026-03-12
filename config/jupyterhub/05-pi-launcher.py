@@ -57,6 +57,11 @@ pi_launcher_py.write_text(
             "medium": "pi-medium",
             "large": "pi-large",
         }
+        PROFILE_UI_SPECS = {
+            "small": os.environ.get("PI_PROFILE_SMALL_SPEC", "2 cpu / 8G RAM"),
+            "medium": os.environ.get("PI_PROFILE_MEDIUM_SPEC", "4 cpu / 16G RAM"),
+            "large": os.environ.get("PI_PROFILE_LARGE_SPEC", "8 cpu / 32G RAM"),
+        }
 
         def hub_request(method: str, path: str, **kwargs):
             headers = kwargs.pop("headers", {})
@@ -832,17 +837,17 @@ pi_launcher_py.write_text(
                   <form method="post" action="{SERVICE_PREFIX}/launch">
                     <input type="hidden" name="_xsrf" value="{xsrf_token}" />
                     <input type="hidden" name="size" value="small" />
-                    <button class="btn" type="submit">Small<small>2 cpu / 8 GB ram</small></button>
+                    <button class="btn" type="submit">Small<small>{html.escape(str(PROFILE_UI_SPECS.get('small', '')))}</small></button>
                   </form>
                   <form method="post" action="{SERVICE_PREFIX}/launch">
                     <input type="hidden" name="_xsrf" value="{xsrf_token}" />
                     <input type="hidden" name="size" value="medium" />
-                    <button class="btn" type="submit">Medium<small>4 cpu / 16 GB ram</small></button>
+                    <button class="btn" type="submit">Medium<small>{html.escape(str(PROFILE_UI_SPECS.get('medium', '')))}</small></button>
                   </form>
                   <form method="post" action="{SERVICE_PREFIX}/launch">
                     <input type="hidden" name="_xsrf" value="{xsrf_token}" />
                     <input type="hidden" name="size" value="large" />
-                    <button class="btn" type="submit">Large<small>8 cpu / 32 GB ram</small></button>
+                    <button class="btn" type="submit">Large<small>{html.escape(str(PROFILE_UI_SPECS.get('large', '')))}</small></button>
                   </form>
                 </div>
                 <div class="row">
@@ -1590,10 +1595,39 @@ pi_live_share_enabled = "1" if bool(pi_live_share_enabled_cfg) else "0"
 pi_sharing_namespace = str(z2jh.get_config("custom.pi-sharing-namespace", "") or "").strip()
 pi_share_session_max_bytes = str(z2jh.get_config("custom.pi-share-session-max-bytes", 1048576))
 pi_coding_agent_dir = str(z2jh.get_config("custom.pi-coding-agent-dir", "/tmp/pi-agent") or "/tmp/pi-agent").strip()
+
+pi_profiles_cfg = z2jh.get_config("custom.pi-profiles", {}) or {}
+
+def _format_cpu_value(value):
+    if value is None:
+        return ""
+    try:
+        f = float(value)
+        if f.is_integer():
+            return str(int(f))
+    except Exception:
+        pass
+    return str(value)
+
+def _profile_spec_text(size_key, default_text):
+    if isinstance(pi_profiles_cfg, dict):
+        spec = pi_profiles_cfg.get(size_key)
+        if isinstance(spec, dict):
+            cpu = _format_cpu_value(spec.get("cpu_limit"))
+            mem = str(spec.get("mem_limit") or "").strip()
+            if cpu and mem:
+                return f"{cpu} cpu / {mem} RAM"
+    return default_text
+
+pi_profile_small_spec = _profile_spec_text("small", "2 cpu / 8G RAM")
+pi_profile_medium_spec = _profile_spec_text("medium", "4 cpu / 16G RAM")
+pi_profile_large_spec = _profile_spec_text("large", "8 cpu / 32G RAM")
+
 public_host = z2jh.get_config("custom.external-url") or ""
 public_host = str(public_host).strip().rstrip("/")
 if public_host and not public_host.startswith(("http://", "https://")):
-    public_host = f"https://{public_host}"
+    public_scheme = str(z2jh.get_config("custom.external-url-scheme", "https") or "https").strip()
+    public_host = f"{public_scheme}://{public_host}"
 pi_launcher_oauth_redirect_uri = f"{public_host}/services/{pi_launcher_service_name}/oauth_callback"
 
 launcher_env = {
@@ -1605,6 +1639,9 @@ launcher_env = {
     "PI_LIVE_SHARE_ENABLED": pi_live_share_enabled,
     "PI_SHARE_SESSION_MAX_BYTES": pi_share_session_max_bytes,
     "PI_CODING_AGENT_DIR": pi_coding_agent_dir,
+    "PI_PROFILE_SMALL_SPEC": pi_profile_small_spec,
+    "PI_PROFILE_MEDIUM_SPEC": pi_profile_medium_spec,
+    "PI_PROFILE_LARGE_SPEC": pi_profile_large_spec,
 }
 if pi_sharing_namespace:
     launcher_env["PI_SHARING_NAMESPACE"] = pi_sharing_namespace
