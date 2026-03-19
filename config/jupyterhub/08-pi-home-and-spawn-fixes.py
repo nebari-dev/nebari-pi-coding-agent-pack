@@ -855,28 +855,33 @@ if isinstance(existing_pod_security_context, dict):
         existing_pod_security_context.setdefault("fsGroupChangePolicy", "OnRootMismatch")
         c.KubeSpawner.pod_security_context = existing_pod_security_context
 
-# kubespawner in this stack still emits pod fsGroup without fsGroupChangePolicy.
-# For RWX homes this can stall startup for many minutes. Force-disable fs_gid before spawn
-# and rely on explicit init-container chmod for writable paths.
-c.KubeSpawner.fs_gid = None
+# Keep fsGroup enabled for default (non-pi) servers so user home PVCs are writable
+# as uid 1000, while still disabling fsGroup for Pi servers (which run as root here).
+DEFAULT_FS_GID = int(z2jh.get_config("custom.default-fs-gid", 100) or 100)
+c.KubeSpawner.fs_gid = DEFAULT_FS_GID
 
 _previous_pre_spawn_hook = getattr(c.Spawner, "pre_spawn_hook", None)
 
 
-async def _pre_spawn_disable_fs_gid(spawner):
-    spawner.fs_gid = None
+async def _pre_spawn_adjust_fs_gid(spawner):
+    server_name = (getattr(spawner, "name", "") or "").strip()
+    if server_name == "pi":
+        spawner.fs_gid = None
+    else:
+        spawner.fs_gid = DEFAULT_FS_GID
+
     if callable(_previous_pre_spawn_hook):
         result = _previous_pre_spawn_hook(spawner)
         if inspect.isawaitable(result):
             await result
 
 
-c.Spawner.pre_spawn_hook = _pre_spawn_disable_fs_gid
+c.Spawner.pre_spawn_hook = _pre_spawn_adjust_fs_gid
 
 _previous_modify_pod_hook = getattr(c.KubeSpawner, "modify_pod_hook", None)
 
 
-async def _modify_pod_strip_fs_group(spawner, pod):
+async def _modify_pod_adjust_fs_group(spawner, pod):
     if callable(_previous_modify_pod_hook):
         maybe_pod = _previous_modify_pod_hook(spawner, pod)
         if inspect.isawaitable(maybe_pod):
@@ -886,9 +891,16 @@ async def _modify_pod_strip_fs_group(spawner, pod):
 
     try:
         sec = pod.spec.security_context
+        server_name = (getattr(spawner, "name", "") or "").strip()
         if sec is not None:
-            sec.fs_group = None
-            sec.fs_group_change_policy = None
+            if server_name == "pi":
+                sec.fs_group = None
+                sec.fs_group_change_policy = None
+            else:
+                if sec.fs_group is None:
+                    sec.fs_group = DEFAULT_FS_GID
+                if getattr(sec, "fs_group_change_policy", None) is None:
+                    sec.fs_group_change_policy = "OnRootMismatch"
             pod.spec.security_context = sec
     except Exception:
         pass
@@ -896,4 +908,4 @@ async def _modify_pod_strip_fs_group(spawner, pod):
     return pod
 
 
-c.KubeSpawner.modify_pod_hook = _modify_pod_strip_fs_group
+c.KubeSpawner.modify_pod_hook = _modify_pod_adjust_fs_group
