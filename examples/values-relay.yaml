@@ -1,15 +1,5 @@
 # values-relay.yaml
-# Relay-enabled profile for the RECREATE.md local flow.
-#
-# Install example:
-# helm upgrade --install data-science-pack PACKS/nebari-pi-pack \
-#   --namespace data-science \
-#   -f PACKS/nebari-pi-pack/examples/values-relay.yaml \
-#   --wait --timeout 50m
-#
-# Note:
-# - relay.deployMode=configmap is used for local/dev convenience.
-# - relay.core.usePiM4Token=true reuses Pi tooling token for Hub API access.
+# Relay-enabled local profile.
 
 nebariapp:
   enabled: true
@@ -27,34 +17,19 @@ pi:
     enabled: true
   sharedSkills:
     enabled: true
-    mode: pvc-subpath
-    pvcName: shared-storage
-    pvcSubPath: shared-skills
-    sync:
-      enabled: true
-      releaseId: ""
-      source:
-        type: url
-        url: https://github.com/nenb/nebari-agent-skills/releases/latest/download/shared-skills.tar.gz
-        sha256: ""
+    mode: image
+    imagePath: /opt/nebari/baked-skills/shared-skills
 
 relay:
   enabled: true
   deployMode: configmap
-
-  # For local RECREATE this can stay disabled and be tested via port-forward.
-  # If you enable it, set relay.host to a resolvable hostname.
   nebariapp:
     enabled: false
     hostname: relay.nebari.local
     auth:
       enabled: false
-
-  # Map external senders to Nebari usernames for relay routing.
-  # Replace nebari-admin with a real local user as needed.
   messageUserMap:
     "dummy:test-user-1": "nebari-admin"
-
   core:
     serviceName: pi-relay-core
     deploymentName: pi-relay-core
@@ -62,22 +37,16 @@ relay:
     hubApiUrl: http://hub:8081/hub/api
     usePiM4Token: true
     piAgentDir: /tmp/pi-agent
-
-    # local-friendly default (no PVC requirement)
     storageType: emptyDir
     statePvcName: ""
     stateSubPath: relay-state
-
     idempotencyBackend: sqlite
     idempotencyPath: /var/lib/relay/idempotency.db
-
   dummy:
     path: /relay/dummy/simulate
     statusPath: /relay/dummy/status
-
   slack:
     path: /relay/slack/events
-
   whatsapp:
     path: /relay/whatsapp/webhook
 
@@ -85,11 +54,6 @@ jupyterhub:
   custom:
     external-url: ""
     pi-image: quay.io/nebari/pi-agent:latest
+    pi-skills-path: /opt/nebari/baked-skills/shared-skills
     pi-coding-agent-dir: /tmp/pi-agent
     pi-sharing-namespace: data-science
-
-  hub:
-    extraEnv:
-      NEBARI_SHARED_SKILLS_MODE: pvc-subpath
-      NEBARI_SHARED_SKILLS_PVC_NAME: shared-storage
-      NEBARI_SHARED_SKILLS_PVC_SUBPATH: shared-skills

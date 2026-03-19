@@ -105,6 +105,8 @@ spec:
               value: {{ .Values.relay.core.defaultProfile | quote }}
             - name: NEBARI_PI_AGENT_DIR
               value: {{ .Values.relay.core.piAgentDir | default "/tmp/pi-agent" | quote }}
+            - name: NEBARI_SHARED_SKILLS_DIR
+              value: {{ .Values.pi.sharedSkills.imagePath | default "/opt/nebari/baked-skills/shared-skills" | quote }}
             - name: KUBECTL_BIN
               value: {{ if eq .Values.relay.deployMode "image" }}{{ .Values.relay.core.kubectlBin | quote }}{{ else }}"/opt/relay/bin/kubectl"{{ end }}
             - name: KUBECONFIG

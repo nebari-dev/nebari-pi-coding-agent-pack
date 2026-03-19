@@ -1,11 +1,5 @@
 # values-local-reliable.yaml
 # Stable local testing profile for Pi in k3d.
-#
-# Goals:
-# - use a registry image (no k3d image import race)
-# - use immutable reference for Pi runtime image
-# - disable JupyterHub pre-pullers (reduce disk churn)
-# - keep Pi user pods on a single node for local dev stability
 
 nebariapp:
   enabled: true
@@ -26,40 +20,25 @@ nebariapp:
 
 pi:
   enabled: true
-
-  # Registry-backed Pi image for reliable pulls.
-  # This file is configured for the local k3d registry flow.
   image:
     repository: localhost:5001/nebari-pi-agent
-    tag: dev-20260227-143001-doctor
-
+    tag: baked-20260319-153528
   launcher:
     serviceName: pi-launcher
     port: 10300
     liveShareEnabled: false
-
   sharing:
     enabled: true
     sessionMaxBytes: 1048576
-
   sharedSkills:
     enabled: true
-    mode: pvc-subpath
-    pvcName: shared-storage
-    pvcSubPath: shared-skills
-    sync:
-      enabled: true
-      releaseId: ""
-      source:
-        type: url
-        url: https://github.com/nenb/nebari-agent-skills/releases/latest/download/shared-skills.tar.gz
-        sha256: ""
+    mode: image
+    imagePath: /opt/nebari/baked-skills/shared-skills
 
 relay:
   enabled: false
 
 jupyterhub:
-  # Reduce local node disk churn.
   prePuller:
     hook:
       enabled: false
@@ -69,30 +48,19 @@ jupyterhub:
   singleuser:
     image:
       pullPolicy: IfNotPresent
-    # Prefer one node for Pi dev in multi-node local clusters.
     nodeSelector:
       kubernetes.io/hostname: k3d-nebari-local-agent-1
 
   custom:
     external-url: ""
-
-    # Immutable Pi image ref used by Pi named profiles.
-    # Keeping digest-pinned string avoids accidental tag drift.
-    pi-image: localhost:5001/nebari-pi-agent@sha256:b521304835905c188331f9939d2d08f3eebf6c85b0f220d43651c4298dda14da
-
+    pi-image: quay.io/openteams/pi-coding-agent-demo@sha256:c956ca3951b4c49241346ca81dda7e5ddd9e7a184ddf7199515891f57a0f861e
+    pi-skills-path: /opt/nebari/baked-skills/shared-skills
     pi-launcher-port: 10300
     pi-launcher-service-name: pi-launcher
     pi-live-share-enabled: false
     pi-sharing-namespace: data-science
-
     pi-share-session-max-bytes: 1048576
     pi-hub-api-url: http://hub:8081/hub/api
     pi-proxy-url: http://proxy-public
     pi-coding-agent-dir: /tmp/pi-agent
     pi-m4-tools-service-name: pi-m4-tools
-
-  hub:
-    extraEnv:
-      NEBARI_SHARED_SKILLS_MODE: pvc-subpath
-      NEBARI_SHARED_SKILLS_PVC_NAME: shared-storage
-      NEBARI_SHARED_SKILLS_PVC_SUBPATH: shared-skills

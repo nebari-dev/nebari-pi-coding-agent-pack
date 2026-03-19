@@ -1,0 +1,37 @@
+# values-baked-skills.yaml
+# Production-style example using image-baked shared skills.
+
+nebariapp:
+  enabled: true
+  hostname: jupyter.nebari.local
+
+pi:
+  enabled: true
+  image:
+    repository: quay.io/openteams/pi-coding-agent-demo
+    tag: baked-20260319-153528
+  sharing:
+    enabled: true
+  sharedSkills:
+    enabled: true
+    mode: image
+    imagePath: /opt/nebari/baked-skills/shared-skills
+
+relay:
+  enabled: false
+
+jupyterhub:
+  prePuller:
+    hook:
+      enabled: false
+    continuous:
+      enabled: false
+  singleuser:
+    image:
+      pullPolicy: IfNotPresent
+  custom:
+    external-url: ""
+    pi-image: quay.io/openteams/pi-coding-agent-demo@sha256:c956ca3951b4c49241346ca81dda7e5ddd9e7a184ddf7199515891f57a0f861e
+    pi-skills-path: /opt/nebari/baked-skills/shared-skills
+    pi-coding-agent-dir: /tmp/pi-agent
+    pi-sharing-namespace: data-science

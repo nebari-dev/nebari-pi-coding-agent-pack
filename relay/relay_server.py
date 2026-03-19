@@ -165,7 +165,7 @@ def load_config() -> Config:
         hub_api_url=hub_api_url,
         hub_api_token=hub_api_token,
         default_profile=os.environ.get("NEBARI_PI_PROFILE", "pi-small").strip(),
-        skill_dir=os.environ.get("NEBARI_SHARED_SKILLS_DIR", "/opt/nebari/shared-skills").strip(),
+        skill_dir=os.environ.get("NEBARI_SHARED_SKILLS_DIR", "/opt/nebari/baked-skills/shared-skills").strip(),
         pi_agent_dir=pi_agent_dir,
         insecure_tls=_coerce_bool(os.environ.get("NEBARI_INSECURE_TLS", "1"), default=True),
         kubectl_bin=os.environ.get("KUBECTL_BIN", "kubectl").strip(),

@@ -16,8 +16,4 @@ data:
 {{ .Files.Get "config/jupyterhub/05-pi-launcher.py" | indent 4 }}
   08-pi-home-and-spawn-fixes.py: |
 {{ .Files.Get "config/jupyterhub/08-pi-home-and-spawn-fixes.py" | indent 4 }}
-{{- if .Values.pi.sharedSkills.enabled }}
-  09-shared-skills.py: |
-{{ .Files.Get "config/jupyterhub/09-shared-skills.py" | indent 4 }}
-{{- end }}
 {{- end }}

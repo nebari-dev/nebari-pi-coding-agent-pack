@@ -23,9 +23,10 @@ nebariapp:
       - email
       - groups
 
-# Shared storage configuration (optional chart-level PVC)
+# Legacy chart-level shared storage PVC (deprecated for Pi shared skills).
+# Kept only for backward compatibility with external overlays.
 sharedStorage:
-  enabled: true
+  enabled: false
   storageClass: ""
   size: 10Gi
   accessModes:
@@ -80,30 +81,8 @@ pi:
 
   sharedSkills:
     enabled: true
-    # Only pvc-subpath mode is supported.
-    mode: pvc-subpath
-    pvcName: shared-storage
-    pvcSubPath: shared-skills
-    # Chart-managed sync/rotation pipeline for immutable URL artifacts.
-    sync:
-      enabled: true
-      releaseId: "" # defaults to helm-r<revision>
-      keepReleases: 5
-      pvcMountPath: /mnt/share
-      source:
-        # URL artifact is the only supported source mode.
-        # Recommended: pin to immutable release URL + SHA256.
-        type: url
-        # Example points at the nenb skills repo latest release asset.
-        url: "https://github.com/nenb/nebari-agent-skills/releases/latest/download/shared-skills.tar.gz"
-        # Optional SHA256 for archive integrity verification.
-        sha256: ""
-        # Optional Bearer token auth for private artifact endpoints.
-        auth:
-          secretName: ""
-          tokenKey: token
-      job:
-        image: alpine:3.20
+    mode: image
+    imagePath: /opt/nebari/baked-skills/shared-skills
 
 # =============================================================================
 # Relay subsystem (optional)
@@ -205,6 +184,7 @@ jupyterhub:
     pi-sharing-namespace: ""
     pi-share-session-max-bytes: 1048576
     pi-image: quay.io/nebari/pi-agent:latest
+    pi-skills-path: /opt/nebari/baked-skills/shared-skills
     pi-hub-api-url: http://hub:8081/hub/api
     pi-proxy-url: http://proxy-public
     pi-coding-agent-dir: /tmp/pi-agent
@@ -253,9 +233,6 @@ jupyterhub:
           secretKeyRef:
             name: pi-pack-pi-secrets
             key: api-token
-      NEBARI_SHARED_SKILLS_MODE: pvc-subpath
-      NEBARI_SHARED_SKILLS_PVC_NAME: shared-storage
-      NEBARI_SHARED_SKILLS_PVC_SUBPATH: shared-skills
 
     extraVolumes:
       - name: custom-config

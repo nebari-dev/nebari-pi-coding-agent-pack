@@ -515,6 +515,13 @@ if custom_template_path not in [str(p) for p in existing_templates]:
 _orig_profile_list = c.KubeSpawner.profile_list
 
 PI_IMAGE = str(z2jh.get_config("custom.pi-image", "quay.io/nebari/pi-agent:latest") or "quay.io/nebari/pi-agent:latest")
+PI_SKILL_PATH = str(
+    z2jh.get_config(
+        "custom.pi-skills-path",
+        "/opt/nebari/baked-skills/shared-skills",
+    )
+    or "/opt/nebari/baked-skills/shared-skills"
+)
 PI_ENV = {
     # Token is injected by chart via hub env -> singleuser profile env.
     "NEBARI_HUB_API_TOKEN": os.environ.get("PI_M4_TOOLS_API_TOKEN", ""),
@@ -522,6 +529,9 @@ PI_ENV = {
     "NEBARI_PROXY_URL": str(z2jh.get_config("custom.pi-proxy-url", "http://proxy-public") or "http://proxy-public"),
     # Keep Pi runtime state outside potentially read-only /home mounts.
     "PI_CODING_AGENT_DIR": str(z2jh.get_config("custom.pi-coding-agent-dir", "/tmp/pi-agent") or "/tmp/pi-agent"),
+    # Shared skills are baked into the image.
+    "NEBARI_SHARED_SKILLS_MODE": "image",
+    "NEBARI_SHARED_SKILLS_DIR": PI_SKILL_PATH,
 }
 PI_CMD = [
     "python",
@@ -544,6 +554,8 @@ PI_CMD = [
     "7681",
     "--",
     "pi",
+    "--skill",
+    PI_SKILL_PATH,
 ]
 
 PI_SPECS_BY_SIZE = {
