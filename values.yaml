@@ -193,6 +193,9 @@ jupyterhub:
     # This grants full in-container filesystem permissions for that user's pod.
     # User isolation is still provided by per-user pods/PVCs.
     pi-run-as-root: false
+    # If true, default (non-pi) notebook servers also run as root.
+    # Use only for local/dev scenarios where full root access is required.
+    default-run-as-root: false
     pi-profiles:
       small:
         display_name: Pi Small

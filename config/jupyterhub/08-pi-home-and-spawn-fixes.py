@@ -592,6 +592,7 @@ if isinstance(_pi_profile_overrides, dict):
             PI_SPECS_BY_SIZE[_size].update(_override)
 
 PI_RUN_AS_ROOT = bool(z2jh.get_config("custom.pi-run-as-root", False))
+DEFAULT_RUN_AS_ROOT = bool(z2jh.get_config("custom.default-run-as-root", False))
 
 code_server_bootstrap_script = textwrap.dedent(
     """
@@ -599,6 +600,26 @@ code_server_bootstrap_script = textwrap.dedent(
     if [ "${JUPYTERHUB_SERVER_NAME:-}" = "pi" ]; then
       exit 0
     fi
+
+    # Local/dev convenience: provide a minimal sudo shim for root-run pods
+    # when the base image does not ship sudo.
+    if [ "$(id -u)" = "0" ] && ! command -v sudo >/dev/null 2>&1; then
+      cat >/usr/local/bin/sudo <<'EOF'
+#!/bin/sh
+if [ "$#" -eq 0 ]; then
+  exec /bin/sh
+fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+exec "$@"
+EOF
+      chmod 0755 /usr/local/bin/sudo || true
+    fi
+
     CS_BIN="$HOME/.local/bin/code-server"
     if [ -x "$CS_BIN" ]; then
       exit 0
@@ -736,6 +757,74 @@ def _apply_pi_root_access(override):
     return override
 
 
+def _is_server_root_enabled(server_name: str) -> bool:
+    name = (server_name or "").strip()
+    if name == "pi":
+        return PI_RUN_AS_ROOT
+    return DEFAULT_RUN_AS_ROOT
+
+
+def _ensure_root_container_config(container_cfg):
+    cfg = copy.deepcopy(container_cfg or {})
+    if not isinstance(cfg, dict):
+        cfg = {}
+    sec_ctx = copy.deepcopy(cfg.get("securityContext") or {})
+    if not isinstance(sec_ctx, dict):
+        sec_ctx = {}
+    sec_ctx["runAsUser"] = 0
+    sec_ctx["runAsGroup"] = 0
+    sec_ctx["runAsNonRoot"] = False
+    sec_ctx["allowPrivilegeEscalation"] = True
+    cfg["securityContext"] = sec_ctx
+    return cfg
+
+
+def _ensure_root_pod_config(pod_cfg):
+    cfg = copy.deepcopy(pod_cfg or {})
+    if not isinstance(cfg, dict):
+        cfg = {}
+    sec_ctx = copy.deepcopy(cfg.get("securityContext") or {})
+    if not isinstance(sec_ctx, dict):
+        sec_ctx = {}
+    sec_ctx["runAsNonRoot"] = False
+    cfg["securityContext"] = sec_ctx
+    return cfg
+
+
+def _spawner_cmd_supports_allow_root(spawner) -> bool:
+    cmd = getattr(spawner, "cmd", None)
+    if cmd in (None, "", []):
+        return True
+    if isinstance(cmd, str):
+        joined = cmd.lower()
+    elif isinstance(cmd, (list, tuple)):
+        joined = " ".join(str(part).lower() for part in cmd)
+    else:
+        joined = str(cmd).lower()
+    return "jupyter" in joined
+
+
+def _apply_root_access_to_spawner(spawner):
+    spawner.uid = 0
+    spawner.gid = 0
+    spawner.extra_container_config = _ensure_root_container_config(
+        getattr(spawner, "extra_container_config", None)
+    )
+    spawner.extra_pod_config = _ensure_root_pod_config(
+        getattr(spawner, "extra_pod_config", None)
+    )
+
+    # Jupyter singleuser disallows root unless explicitly permitted.
+    # Add --allow-root for notebook-ish spawns.
+    user_opts = getattr(spawner, "user_options", {}) or {}
+    jhub_app = user_opts.get("jhub_app") if isinstance(user_opts, dict) else None
+    if (not jhub_app) or _spawner_cmd_supports_allow_root(spawner):
+        current_args = list(getattr(spawner, "args", []) or [])
+        if "--allow-root" not in current_args:
+            current_args.append("--allow-root")
+            spawner.args = current_args
+
+
 def _build_pi_profile_from_base(base_profile, size_key):
     spec = PI_SPECS_BY_SIZE.get(size_key) or {}
     p = copy.deepcopy(base_profile)
@@ -856,7 +945,7 @@ if isinstance(existing_pod_security_context, dict):
         c.KubeSpawner.pod_security_context = existing_pod_security_context
 
 # Keep fsGroup enabled for default (non-pi) servers so user home PVCs are writable
-# as uid 1000, while still disabling fsGroup for Pi servers (which run as root here).
+# as uid 1000, unless local/dev root mode is explicitly enabled.
 DEFAULT_FS_GID = int(z2jh.get_config("custom.default-fs-gid", 100) or 100)
 c.KubeSpawner.fs_gid = DEFAULT_FS_GID
 
@@ -865,10 +954,14 @@ _previous_pre_spawn_hook = getattr(c.Spawner, "pre_spawn_hook", None)
 
 async def _pre_spawn_adjust_fs_gid(spawner):
     server_name = (getattr(spawner, "name", "") or "").strip()
-    if server_name == "pi":
+    if _is_server_root_enabled(server_name):
         spawner.fs_gid = None
+        _apply_root_access_to_spawner(spawner)
     else:
-        spawner.fs_gid = DEFAULT_FS_GID
+        if server_name == "pi":
+            spawner.fs_gid = None
+        else:
+            spawner.fs_gid = DEFAULT_FS_GID
 
     if callable(_previous_pre_spawn_hook):
         result = _previous_pre_spawn_hook(spawner)
@@ -893,7 +986,7 @@ async def _modify_pod_adjust_fs_group(spawner, pod):
         sec = pod.spec.security_context
         server_name = (getattr(spawner, "name", "") or "").strip()
         if sec is not None:
-            if server_name == "pi":
+            if _is_server_root_enabled(server_name) or server_name == "pi":
                 sec.fs_group = None
                 sec.fs_group_change_policy = None
             else:
