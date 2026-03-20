@@ -597,10 +597,6 @@ DEFAULT_RUN_AS_ROOT = bool(z2jh.get_config("custom.default-run-as-root", False))
 code_server_bootstrap_script = textwrap.dedent(
     """
     set -u
-    if [ "${JUPYTERHUB_SERVER_NAME:-}" = "pi" ]; then
-      exit 0
-    fi
-
     # Local/dev convenience: provide a minimal sudo shim for root-run pods
     # when the base image does not ship sudo.
     if [ "$(id -u)" = "0" ] && ! command -v sudo >/dev/null 2>&1; then
@@ -618,6 +614,10 @@ done
 exec "$@"
 EOF
       chmod 0755 /usr/local/bin/sudo || true
+    fi
+
+    if [ "${JUPYTERHUB_SERVER_NAME:-}" = "pi" ]; then
+      exit 0
     fi
 
     CS_BIN="$HOME/.local/bin/code-server"
