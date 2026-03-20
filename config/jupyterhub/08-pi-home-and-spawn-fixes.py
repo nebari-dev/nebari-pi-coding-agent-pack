@@ -77,6 +77,49 @@ japps_page_template.write_text(
     """{% extends "page.html" %}
 {% block main %}
 <div id="root"></div>
+<script type="text/javascript">
+  (function ensureJAppsAuthCookie() {
+    function getCookie(name) {
+      var parts = ("; " + document.cookie).split("; " + name + "=");
+      if (parts.length !== 2) {
+        return "";
+      }
+      return decodeURIComponent(parts.pop().split(";").shift());
+    }
+
+    var hasToken = !!getCookie("jhub_apps_access_token");
+    if (hasToken) {
+      try {
+        sessionStorage.removeItem("japps_cookie_bootstrap_attempted");
+      } catch (e) {}
+      return;
+    }
+
+    var attempted = false;
+    try {
+      attempted = sessionStorage.getItem("japps_cookie_bootstrap_attempted") === "1";
+    } catch (e) {}
+
+    if (!attempted) {
+      try {
+        sessionStorage.setItem("japps_cookie_bootstrap_attempted", "1");
+      } catch (e) {}
+      var current = window.location.pathname + window.location.search + window.location.hash;
+      window.location.replace("/services/japps/jhub-login?next=" + encodeURIComponent(current));
+      return;
+    }
+
+    var root = document.getElementById("root");
+    if (root) {
+      root.innerHTML =
+        '<div style="max-width:700px;margin:48px auto;padding:16px 20px;border:1px solid #ddd;border-radius:10px;font-family:system-ui,sans-serif;">' +
+        '<h2 style="margin:0 0 8px;">Session bootstrap needed</h2>' +
+        '<p style="margin:0 0 12px;">Your JupyterHub login succeeded, but the launcher auth cookie is missing.</p>' +
+        '<a href="/services/japps/jhub-login" style="display:inline-block;padding:8px 12px;border-radius:8px;background:#111;color:#fff;text-decoration:none;">Retry launcher sign-in</a>' +
+        "</div>";
+    }
+  })();
+</script>
 <script src="/services/japps/static/js/index.js?v={{version_hash}}"></script>
 <link
   rel="stylesheet"
