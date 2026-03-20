@@ -82,6 +82,42 @@ japps_page_template.write_text(
     logo: "{{ logo }}",
   };
 
+  // jhub-apps frontend expects user_options.display_name for jhub_app entries.
+  // Older servers may miss this field and crash with `toLowerCase` on undefined.
+  (function patchJSONParseForJAppsServerPayload() {
+    var originalParse = JSON.parse;
+    JSON.parse = function(text, reviver) {
+      var parsed = originalParse(text, reviver);
+      try {
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Array.isArray(parsed.user_apps) &&
+          Object.prototype.hasOwnProperty.call(parsed, "shared_apps")
+        ) {
+          parsed.user_apps = parsed.user_apps.map(function(app) {
+            if (!app || typeof app !== "object") {
+              return app;
+            }
+            var opts = app.user_options && typeof app.user_options === "object" ? app.user_options : {};
+            if (opts.jhub_app) {
+              var fallbackName = typeof app.name === "string" ? app.name : "";
+              if (typeof opts.display_name !== "string" || !opts.display_name.trim()) {
+                opts.display_name = fallbackName;
+              }
+              if (typeof opts.framework !== "string" || !opts.framework.trim()) {
+                opts.framework = "custom";
+              }
+            }
+            app.user_options = opts;
+            return app;
+          });
+        }
+      } catch (e) {}
+      return parsed;
+    };
+  })();
+
   function loadJAppsAssets() {
     if (window.__jappsAssetsLoaded) {
       return;
@@ -1097,6 +1133,12 @@ def _normalize_arbitrary_app_user_options(spawner):
         user_options.setdefault("jhub_app", True)
         user_options.setdefault("framework", "custom")
         user_options["custom_command"] = command
+
+    if user_options.get("jhub_app"):
+        display_name = str(user_options.get("display_name") or "").strip()
+        if not display_name:
+            fallback_display_name = str(getattr(spawner, "name", "") or "").strip()
+            user_options["display_name"] = fallback_display_name
 
     if cwd:
         user_options["filepath"] = cwd
