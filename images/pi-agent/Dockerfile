@@ -27,6 +27,12 @@ RUN npm install -g @mariozechner/pi-coding-agent
 # Bake shared skills from local repository files.
 COPY skills/shared-skills /opt/nebari/baked-skills/shared-skills
 
+# Install deps for baked web-browser helper scripts.
+RUN if [ -f /opt/nebari/baked-skills/shared-skills/web-browser/scripts/package.json ]; then \
+      npm --prefix /opt/nebari/baked-skills/shared-skills/web-browser/scripts install --omit=dev && \
+      chmod +x /opt/nebari/baked-skills/shared-skills/web-browser/scripts/*.js; \
+    fi
+
 # Browser smoke-check helper used by deploy verification.
 COPY images/pi-agent/pi-browser-smoke.py /opt/nebari/bin/pi-browser-smoke.py
 RUN install -m 0755 /opt/nebari/bin/pi-browser-smoke.py /usr/local/bin/pi-browser-smoke
@@ -39,6 +45,8 @@ RUN ttyd --version \
     && command -v pi-browser-smoke >/dev/null \
     && test -f /opt/nebari/baked-skills/shared-skills/jhub-deploy/SKILL.md \
     && test -f /opt/nebari/baked-skills/shared-skills/observability/SKILL.md \
+    && test -f /opt/nebari/baked-skills/shared-skills/web-browser/SKILL.md \
+    && test -f /opt/nebari/baked-skills/shared-skills/web-browser/scripts/start.js \
     && ! command -v nebari_app_deploy >/dev/null 2>&1 \
     && ! command -v nebari_app_status >/dev/null 2>&1 \
     && ! command -v nebari_app_logs >/dev/null 2>&1 \
