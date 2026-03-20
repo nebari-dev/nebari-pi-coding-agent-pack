@@ -1,10 +1,13 @@
 import copy
 import inspect
 import os
+import re
 import textwrap
 from pathlib import Path
 
 import z2jh
+from kubernetes import client as k8s_client
+from kubernetes import config as k8s_config
 
 # 1) Home page UX: remove the old "Pi -> /hub/user-redirect/lab/workspaces/pi"
 #    entry and ensure "Pi Coding Agent -> /services/pi-launcher/".
@@ -527,6 +530,9 @@ PI_ENV = {
     "NEBARI_HUB_API_TOKEN": os.environ.get("PI_M4_TOOLS_API_TOKEN", ""),
     "NEBARI_HUB_API_URL": str(z2jh.get_config("custom.pi-hub-api-url", "http://hub:8081/hub/api") or "http://hub:8081/hub/api"),
     "NEBARI_PROXY_URL": str(z2jh.get_config("custom.pi-proxy-url", "http://proxy-public") or "http://proxy-public"),
+    # Explicit aliases for POC flows inside the Pi terminal.
+    "JUPYTERHUB_FULL_API_TOKEN": os.environ.get("PI_M4_TOOLS_API_TOKEN", ""),
+    "JUPYTERHUB_FULL_API_URL": str(z2jh.get_config("custom.pi-hub-api-url", "http://hub:8081/hub/api") or "http://hub:8081/hub/api"),
     # Keep Pi runtime state outside potentially read-only /home mounts.
     "PI_CODING_AGENT_DIR": str(z2jh.get_config("custom.pi-coding-agent-dir", "/tmp/pi-agent") or "/tmp/pi-agent"),
     # Shared skills are baked into the image.
@@ -593,6 +599,8 @@ if isinstance(_pi_profile_overrides, dict):
 
 PI_RUN_AS_ROOT = bool(z2jh.get_config("custom.pi-run-as-root", False))
 DEFAULT_RUN_AS_ROOT = bool(z2jh.get_config("custom.default-run-as-root", False))
+PI_K8S_USER_ACCESS_ENABLED = bool(z2jh.get_config("custom.pi-k8s-user-access-enabled", False))
+HUB_NAMESPACE = (os.environ.get("POD_NAMESPACE", "default") or "default").strip() or "default"
 
 code_server_bootstrap_script = textwrap.dedent(
     """
@@ -825,6 +833,48 @@ def _apply_root_access_to_spawner(spawner):
             spawner.args = current_args
 
 
+_core_v1_api = None
+
+
+def _k8s_core_v1_api():
+    global _core_v1_api
+    if _core_v1_api is None:
+        k8s_config.load_incluster_config()
+        _core_v1_api = k8s_client.CoreV1Api()
+    return _core_v1_api
+
+
+def _slug_username(value: str, max_len: int = 28) -> str:
+    raw = re.sub(r"[^a-z0-9-]+", "-", (value or "").strip().lower()).strip("-")
+    if not raw:
+        raw = "user"
+    return raw[:max_len].rstrip("-") or "user"
+
+
+def _ensure_pi_user_k8s_access(username: str) -> str:
+    user_slug = _slug_username(username)
+    sa_name = f"pi-user-{user_slug}"
+
+    core_api = _k8s_core_v1_api()
+    try:
+        core_api.read_namespaced_service_account(name=sa_name, namespace=HUB_NAMESPACE)
+    except Exception:
+        core_api.create_namespaced_service_account(
+            namespace=HUB_NAMESPACE,
+            body=k8s_client.V1ServiceAccount(
+                metadata=k8s_client.V1ObjectMeta(
+                    name=sa_name,
+                    labels={
+                        "pi.nebari.dev/access": "k8s-user-token",
+                        "pi.nebari.dev/owner": user_slug,
+                    },
+                )
+            ),
+        )
+
+    return sa_name
+
+
 def _build_pi_profile_from_base(base_profile, size_key):
     spec = PI_SPECS_BY_SIZE.get(size_key) or {}
     p = copy.deepcopy(base_profile)
@@ -962,6 +1012,18 @@ async def _pre_spawn_adjust_fs_gid(spawner):
             spawner.fs_gid = None
         else:
             spawner.fs_gid = DEFAULT_FS_GID
+
+    if server_name == "pi" and PI_K8S_USER_ACCESS_ENABLED:
+        username = getattr(getattr(spawner, "user", None), "name", "") or ""
+        sa_name = _ensure_pi_user_k8s_access(username)
+        spawner.service_account = sa_name
+
+        env = dict(getattr(spawner, "environment", {}) or {})
+        env["PI_USER_K8S_SERVICE_ACCOUNT"] = sa_name
+        env["KUBECTL_API_SERVER"] = "https://kubernetes.default.svc"
+        env["KUBECTL_TOKEN_FILE"] = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        env["KUBECTL_CA_FILE"] = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        spawner.environment = env
 
     if callable(_previous_pre_spawn_hook):
         result = _previous_pre_spawn_hook(spawner)

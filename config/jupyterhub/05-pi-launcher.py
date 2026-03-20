@@ -1690,30 +1690,34 @@ else:
 # Token is injected via hub env (PI_M4_TOOLS_API_TOKEN) from chart-managed Secret.
 pi_tools_api_token = (os.environ.get("PI_M4_TOOLS_API_TOKEN") or "").strip()
 pi_tools_service_name = str(z2jh.get_config("custom.pi-m4-tools-service-name", "pi-m4-tools") or "pi-m4-tools")
+pi_tools_full_access_enabled = bool(z2jh.get_config("custom.pi-m4-tools-full-access-enabled", False))
 
 if pi_tools_api_token:
-    c.JupyterHub.services.append(
-        {
-            "name": pi_tools_service_name,
-            "api_token": pi_tools_api_token,
-            "display": False,
-        }
-    )
-
-    pi_tools_role = {
-        "name": "pi-m4-tools-role",
-        "services": [pi_tools_service_name],
-        "scopes": [
-            "admin:servers",
-            "admin:server_state",
-            "read:users",
-            "read:users:name",
-            "access:servers",
-        ],
+    service_def = {
+        "name": pi_tools_service_name,
+        "api_token": pi_tools_api_token,
+        "display": False,
     }
-    if isinstance(c.JupyterHub.load_roles, list):
-        c.JupyterHub.load_roles.append(pi_tools_role)
-    else:
-        c.JupyterHub.load_roles = [pi_tools_role]
+    if pi_tools_full_access_enabled:
+        # POC mode: make this token full Hub admin access.
+        service_def["admin"] = True
+    c.JupyterHub.services.append(service_def)
+
+    if not pi_tools_full_access_enabled:
+        pi_tools_role = {
+            "name": "pi-m4-tools-role",
+            "services": [pi_tools_service_name],
+            "scopes": [
+                "admin:servers",
+                "admin:server_state",
+                "read:users",
+                "read:users:name",
+                "access:servers",
+            ],
+        }
+        if isinstance(c.JupyterHub.load_roles, list):
+            c.JupyterHub.load_roles.append(pi_tools_role)
+        else:
+            c.JupyterHub.load_roles = [pi_tools_role]
 else:
     print("WARN: PI_M4_TOOLS_API_TOKEN not set; skipping pi-m4-tools service registration")

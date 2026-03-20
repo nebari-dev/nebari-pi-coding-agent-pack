@@ -1,0 +1,57 @@
+{{- if .Values.pi.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "nebari-pi-pack.fullname" . }}-pi-user-k8s-full
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nebari-pi-pack.fullname" . }}-pi-user-k8s-full
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+subjects:
+  - kind: Group
+    name: system:serviceaccounts:{{ .Release.Namespace }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "nebari-pi-pack.fullname" . }}-pi-user-k8s-full
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "nebari-pi-pack.fullname" . }}-pi-user-k8s-access-provisioner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nebari-pi-pack.fullname" . }}-pi-user-k8s-access-provisioner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nebari-pi-pack.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: hub
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "nebari-pi-pack.fullname" . }}-pi-user-k8s-access-provisioner
+{{- end }}

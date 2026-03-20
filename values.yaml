@@ -189,6 +189,12 @@ jupyterhub:
     pi-proxy-url: http://proxy-public
     pi-coding-agent-dir: /tmp/pi-agent
     pi-m4-tools-service-name: pi-m4-tools
+    # If true, expose PI_M4_TOOLS_API_TOKEN in Pi pods as a full-admin Hub API token.
+    # Intended for demo/POC workflows.
+    pi-m4-tools-full-access-enabled: false
+    # If true, each Pi user gets a dedicated Kubernetes ServiceAccount + RoleBinding
+    # and the Pi pod runs with that ServiceAccount token mounted.
+    pi-k8s-user-access-enabled: false
     # If true, Pi named-server pods run as root inside the container.
     # This grants full in-container filesystem permissions for that user's pod.
     # User isolation is still provided by per-user pods/PVCs.
