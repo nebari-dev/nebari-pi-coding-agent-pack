@@ -41,6 +41,17 @@ japps_config = get_config("custom.japps-config", {})
 for key, value in japps_config.items():
     setattr(c.JAppsConfig, key, value)
 
+# Ensure Pi appears as a pinned quick-access card in japps launcher.
+# Use append() because traitlets may provide a LazyConfigValue here.
+c.JAppsConfig.additional_services.append(
+    {
+        "name": "Pi Coding Agent",
+        "url": "/services/pi-launcher/",
+        "description": "Open your Pi coding agent terminal (or go to launcher if it is not running).",
+        "pinned": True,
+    }
+)
+
 # Install jhub-apps (sets up service, roles, etc.)
 c = install_jhub_apps(c, spawner_to_subclass=KubeSpawner)
 

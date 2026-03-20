@@ -511,8 +511,11 @@ custom_template_path = str(custom_templates_dir)
 if custom_template_path not in [str(p) for p in existing_templates]:
     c.JupyterHub.template_paths = [custom_template_path] + existing_templates
 
-# Keep default jhub-apps page template to avoid blank /hub/home regressions.
-c.JupyterHub.template_paths = existing_templates
+# Keep custom japps_page override enabled so Pi quick-access card is injected.
+# This prepends custom templates while preserving stock templates for fallback.
+c.JupyterHub.template_paths = [custom_template_path] + [
+    str(p) for p in existing_templates if str(p) != custom_template_path
+]
 
 # 2) Spawn/profile fixes:
 #    - strip stale `nebula-pi-cli` mounts from all profiles
@@ -533,6 +536,13 @@ PI_ENV = {
     "NEBARI_HUB_API_TOKEN": os.environ.get("PI_M4_TOOLS_API_TOKEN", ""),
     "NEBARI_HUB_API_URL": str(z2jh.get_config("custom.pi-hub-api-url", "http://hub:8081/hub/api") or "http://hub:8081/hub/api"),
     "NEBARI_PROXY_URL": str(z2jh.get_config("custom.pi-proxy-url", "http://proxy-public") or "http://proxy-public"),
+    "NEBARI_BROWSER_BASE_URL": str(
+        z2jh.get_config(
+            "custom.pi-browser-base-url",
+            "http://proxy-public.data-science.svc.cluster.local:8000",
+        )
+        or "http://proxy-public.data-science.svc.cluster.local:8000"
+    ),
     # Explicit aliases for POC flows inside the Pi terminal.
     "JUPYTERHUB_FULL_API_TOKEN": os.environ.get("PI_M4_TOOLS_API_TOKEN", ""),
     "JUPYTERHUB_FULL_API_URL": str(z2jh.get_config("custom.pi-hub-api-url", "http://hub:8081/hub/api") or "http://hub:8081/hub/api"),

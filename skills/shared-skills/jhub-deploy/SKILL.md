@@ -38,21 +38,65 @@ curl -fsS -H "Authorization: token $API_TOKEN" \
 
 If this fails, stop and report missing scopes/credentials.
 
+### 1.1) Runtime dependency preflight (MUST run)
+
+Before selecting command/image strategy, verify required runtime dependencies for the target app.
+
+Examples:
+- shell-out binaries (`pdftotext`, `ffmpeg`, etc.)
+- language runtimes/toolchains
+- expected package managers/build tools
+
+If required binaries are missing in target image/runtime:
+- either switch to image mode,
+- or include bootstrap installation/fallback logic explicitly,
+- or fail fast with clear remediation.
+
 ---
 
 ## 2) Deployment modes (default = no image push)
 
-### A) **Source-on-home mode** (default)
+### A) **Source-on-home mode** (conditional, not assumed)
 - Build/install app on user home/workspace (`/home/jovyan/...`)
 - Spawn named server to run command from that path
 - **No image push required**
 
-### B) Image mode (optional)
-- Use custom image when runtime deps cannot be satisfied in source-on-home mode
+**Critical rule:** use source-on-home mode only if shared storage between build context and target named server is confirmed.
+
+### B) **Bootstrap-on-target mode** (safe default when storage is uncertain)
+- Treat target named server as isolated storage
+- Build/write artifacts inside target server startup flow
+- Prefer Python bootstrap wrapper that prepares files then `exec`s runtime
+
+### C) Image mode (optional)
+- Use custom image when runtime deps cannot be satisfied in source/bootstrap modes
 - Can use local cluster image import for local k3d/k3s
 - Registry push is optional, only needed when cluster cannot access local image
 
 Do not prefer framework-native templates. Treat all apps as arbitrary command-based runtimes.
+
+### 2.1) Storage topology preflight (MUST run)
+
+Before using source-on-home mode, verify whether target named server shares storage with where artifacts were built.
+
+Minimum checks:
+1. If target server already exists, inspect/compare PVC claim identity with current runtime server.
+2. If target server does not exist yet, treat storage as **unknown** and do **not** assume shared home.
+3. If unknown or different, require bootstrap-on-target or image mode.
+
+Failure message should explicitly say source-on-home was rejected due to non-shared/unknown storage topology.
+
+### 2.2) Image resolution preflight (MUST run when `profile_image` is empty)
+
+`profile_image: ""` can resolve to a broken default image.
+
+Required behavior:
+1. Resolve a known-good image before spawn when `profile_image` is empty.
+2. Resolution order:
+   - `JUPYTER_IMAGE_SPEC` from current runtime, else
+   - image from a currently ready server for same user, else
+   - explicit configured fallback image.
+3. If spawn fails with pull errors (`ImagePullBackOff`/`ErrImagePull`), retry once with resolved known-good image.
 
 ---
 
@@ -81,10 +125,10 @@ To avoid brittle spawn failures, default to this pattern:
 
 1. Use a **single executable command string** in `app.command`.
 2. Keep `{port}` in the final runtime invocation.
-3. For multi-step setup (write files/build/start), prefer a Python bootstrap wrapper:
+3. For multi-step setup (write files/build/start), prefer a quote-minimized Python bootstrap wrapper:
 
 ```bash
-python3 -c "exec(__import__('base64').b64decode('<BASE64_PY>').decode())" {port}
+python3 -c exec(__import__('base64').b64decode('<BASE64_PY>').decode()) {port}
 ```
 
 Where `<BASE64_PY>` decodes to Python that:
@@ -117,6 +161,16 @@ Minimum remediation message should explain:
 - which executable path is missing,
 - that source/build artifacts were not created in this server context,
 - and that the payload must be regenerated with bootstrap/build included.
+
+### 3.3) Command-size guard (MUST enforce)
+
+Large embedded payloads in `app.command` can fail with argument-length errors.
+
+Required rule:
+- Keep `app.command` small (target: <= 4KB; hard-stop around 8KB).
+- Put medium payloads in env vars or files created by a small bootstrap.
+- For large artifacts, use durable artifact URLs/object storage or image mode.
+- Do not embed very large base64 blobs directly in `app.command`.
 
 ## 4) Spawn arbitrary app via direct Hub API
 
@@ -184,14 +238,14 @@ Required checks:
 3. **Mandatory browser smoke check (HEADLESS BROWSER)**
    - Use `pi-browser-smoke` from inside the Pi runtime.
    - Provide a routable base URL for the current environment.
-     - local in-cluster default: `http://proxy-public.data-science.svc.cluster.local`
+     - local in-cluster default: `http://proxy-public.data-science.svc.cluster.local:8000`
      - production: your real external domain base URL
    - Run smoke verification against canonical app path.
 
    Example:
 
    ```bash
-   BASE_URL="${NEBARI_BROWSER_BASE_URL:-http://proxy-public.data-science.svc.cluster.local}"
+   BASE_URL="${NEBARI_BROWSER_BASE_URL:-http://proxy-public.data-science.svc.cluster.local:8000}"
    APP_PATH="/user/${HUB_USER}/${APP_NAME}/"
 
    pi-browser-smoke \
@@ -213,6 +267,10 @@ Required checks:
    - final URL does **not** include `/hub/spawn-pending/` or `/_temp/jhub-app-proxy/`,
    - page HTTP status is success/redirect (`2xx`/`3xx`),
    - at least one visible DOM node exists in `document.body`.
+
+   Diagnostic hint:
+   - If backend/server readiness is true but browser shows blank/near-empty DOM,
+     suspect SPA asset base path or root-relative API fetches (subpath issue), not backend health.
 
 4. **No-browser fallback policy**
    - Browser smoke is mandatory for completion.
@@ -242,11 +300,29 @@ curl -sS -X DELETE \
 
 ## 7) Build guidance for arbitrary stacks
 
-- Build app in user workspace first.
 - Ensure runtime binds to provided port.
 - Keep startup command deterministic and restart-safe.
 - Prefer the Python-base64 bootstrap command pattern for multi-step startup.
-- If command depends on local build artifacts, create them before spawn.
+- If command depends on local build artifacts, ensure artifacts are created in the same target server context.
+
+### 7.1) Frontend subpath preflight (MUST run for SPAs)
+
+Before claiming success for SPA-style apps, check subpath compatibility for Hub-routed paths (`/user/<u>/<app>/...`).
+
+Checklist:
+- avoid root-relative assets (`/assets/...`), prefer relative (`./assets/...`)
+- avoid root-relative API calls (`/api/...`), prefer relative (`./api/...`)
+- configure router basename/base path if framework requires it
+- for Vite static builds, prefer `base: './'` unless app requires a different explicit subpath
+
+### 7.2) Artifact delivery guidance
+
+Do not depend on temporary pod-local HTTP file servers for cross-pod artifact delivery.
+
+Preferred order:
+1. small bundles: embed via env/file bootstrap
+2. medium bundles: stage as durable files/object URLs
+3. large bundles: image mode or durable artifact storage
 
 Examples of arbitrary commands (adjust as needed):
 - Node: `npm run start -- --host 0.0.0.0 --port {port}`
@@ -271,10 +347,25 @@ Common causes:
 - invalid spawn payload keys
 - command not executable / wrong cwd
 - brittle shell quoting in `app.command` (prefer Python-base64 wrapper)
+- argument list too long from oversized command payloads
 - resource request/limit mismatch
 - image pull issues (image mode)
 - PVC/permissions problems
+- non-shared storage assumptions across named servers
+- SPA subpath misconfiguration (root-relative assets/API paths)
 - auth/cookie flow issues causing browser redirect loops or blank home/app page
+- missing runtime dependencies in target image
+
+### 8.1) Failure-signature quick hints
+
+- `ImagePullBackOff` / `ErrImagePull`:
+  likely bad/unresolvable image; retry with known-good resolved image.
+- `ready=true` but browser smoke blank/near-empty UI:
+  likely SPA subpath/base path issue.
+- `argument list too long`:
+  payload too large in `app.command`; move payload to env/file/artifact.
+- `fork/exec ... no such file or directory`:
+  target server missing artifacts/binary; storage is isolated or bootstrap missing.
 
 ---
 
@@ -289,13 +380,17 @@ Common causes:
 ## 10) Output requirements
 
 Always report:
-1. build location/artifacts used
-2. exact spawn payload (sanitized)
-3. exact Hub API calls made
-4. resulting app URL
-5. current server state + next action
-6. verification evidence:
+1. selected deployment mode (source-on-home / bootstrap-on-target / image) and why
+2. storage topology decision (shared/unknown/non-shared) with evidence
+3. image resolution decision (especially when `profile_image` was empty)
+4. build location/artifacts used
+5. exact spawn payload (sanitized)
+6. exact Hub API calls made
+7. resulting app URL
+8. current server state + next action
+9. verification evidence:
    - Hub ready/pending state snapshot,
    - browser smoke final URL,
+   - browser smoke HTTP status,
    - browser smoke page title,
    - screenshot file/path (if captured by browser tooling)
