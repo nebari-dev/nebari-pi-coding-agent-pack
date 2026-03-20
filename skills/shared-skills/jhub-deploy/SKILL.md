@@ -197,11 +197,16 @@ Required checks:
    pi-browser-smoke \
      --base-url "$BASE_URL" \
      --app-path "$APP_PATH" \
-     --username "${PI_BROWSER_SMOKE_USERNAME:-$HUB_USER}" \
-     --password "${PI_BROWSER_SMOKE_PASSWORD:-}" \
+     --username "$HUB_USER" \
+     --hub-api-url "$API_URL" \
+     --hub-api-token "$API_TOKEN" \
      --timeout-seconds 120 \
      --screenshot "/tmp/${APP_NAME}-smoke.png"
    ```
+
+   Notes:
+   - Token-bootstrap mode is the default and preferred path.
+   - Username/password is only fallback for environments where token-bootstrap is unavailable.
 
    Browser smoke pass criteria (minimum):
    - final URL contains `/user/<username>/<app-name>/` path,
