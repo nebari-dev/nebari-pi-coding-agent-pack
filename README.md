@@ -74,19 +74,18 @@ When relay is enabled, keep these aligned:
 
 ## Build Pi image with baked skills
 
-`images/pi-agent/Dockerfile` expects:
+`images/pi-agent/Dockerfile` now bakes skills directly from local repository files:
 
-- `PI_SKILLS_URL` (required)
-- `PI_SKILLS_SHA256` (optional)
+- `skills/shared-skills/jhub-deploy/SKILL.md`
+- `skills/shared-skills/observability/SKILL.md`
 
 Example:
 
 ```bash
 docker build \
+  -f images/pi-agent/Dockerfile \
   -t quay.io/openteams/pi-coding-agent-demo:baked-<tag> \
-  --build-arg PI_SKILLS_URL="https://github.com/nenb/nebari-agent-skills/releases/download/<release>/shared-skills-<sha>.tar.gz" \
-  --build-arg PI_SKILLS_SHA256="<sha256>" \
-  images/pi-agent
+  .
 ```
 
 Then set your Helm values to the pushed image tag/digest:

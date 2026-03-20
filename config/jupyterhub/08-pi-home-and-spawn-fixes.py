@@ -511,6 +511,9 @@ custom_template_path = str(custom_templates_dir)
 if custom_template_path not in [str(p) for p in existing_templates]:
     c.JupyterHub.template_paths = [custom_template_path] + existing_templates
 
+# Keep default jhub-apps page template to avoid blank /hub/home regressions.
+c.JupyterHub.template_paths = existing_templates
+
 # 2) Spawn/profile fixes:
 #    - strip stale `nebula-pi-cli` mounts from all profiles
 #    - keep Pi sizes available only on the `pi` named server
@@ -1002,7 +1005,46 @@ c.KubeSpawner.fs_gid = DEFAULT_FS_GID
 _previous_pre_spawn_hook = getattr(c.Spawner, "pre_spawn_hook", None)
 
 
+def _normalize_arbitrary_app_user_options(spawner):
+    user_options = getattr(spawner, "user_options", None)
+    if not isinstance(user_options, dict):
+        return
+
+    app_opts = user_options.get("app")
+    if not isinstance(app_opts, dict):
+        return
+
+    command = str(app_opts.get("command") or "").strip()
+    cwd = str(app_opts.get("cwd") or "").strip()
+    app_env = app_opts.get("env") if isinstance(app_opts.get("env"), dict) else {}
+
+    if command:
+        user_options.setdefault("jhub_app", True)
+        user_options.setdefault("framework", "custom")
+        user_options["custom_command"] = command
+
+    if cwd:
+        user_options["filepath"] = cwd
+
+    merged_env = dict(user_options.get("env") or {}) if isinstance(user_options.get("env"), dict) else {}
+    for key, value in (app_env or {}).items():
+        if value is None:
+            continue
+        merged_env[str(key)] = str(value)
+    if merged_env:
+        user_options["env"] = merged_env
+
+    spawner.user_options = user_options
+    orm_spawner = getattr(spawner, "orm_spawner", None)
+    if orm_spawner is not None:
+        try:
+            orm_spawner.user_options = user_options
+        except Exception:
+            pass
+
+
 async def _pre_spawn_adjust_fs_gid(spawner):
+    _normalize_arbitrary_app_user_options(spawner)
     server_name = (getattr(spawner, "name", "") or "").strip()
     if _is_server_root_enabled(server_name):
         spawner.fs_gid = None

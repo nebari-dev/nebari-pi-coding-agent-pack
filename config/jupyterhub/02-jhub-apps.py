@@ -19,7 +19,9 @@ if domain:
         c.JupyterHub.bind_url = f"{scheme}://{domain}"
 else:
     c.JupyterHub.bind_url = "http://0.0.0.0:8000"
-c.JupyterHub.default_url = "/hub/home"
+# Route users through japps login shim first so service JWT cookie is present
+# before the React app calls /services/japps/* APIs.
+c.JupyterHub.default_url = "/services/japps/jhub-login"
 c.JupyterHub.template_paths = theme_template_paths
 c.JupyterHub.template_vars = themes.DEFAULT_THEME
 c.JAppsConfig.jupyterhub_config_path = "/usr/local/etc/jupyterhub/jupyterhub_config.py"
