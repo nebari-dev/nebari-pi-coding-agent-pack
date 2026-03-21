@@ -172,6 +172,12 @@ Required rule:
 - For large artifacts, use durable artifact URLs/object storage or image mode.
 - Do not embed very large base64 blobs directly in `app.command`.
 
+Practical payload thresholds:
+- total spawn payload <= 64KB: usually safe for inline/env patterns
+- env payload total <= 256KB: acceptable for medium bundles
+- env payload > 512KB or compressed artifact > 5MB: prefer artifact store or image mode
+- if command + env strategy repeatedly hits size/time limits, switch to image mode
+
 ## 4) Spawn arbitrary app via direct Hub API
 
 ```bash
@@ -237,25 +243,39 @@ Required checks:
 
 3. **Mandatory browser smoke check (HEADLESS BROWSER)**
    - Use `pi-browser-smoke` from inside the Pi runtime.
-   - Provide a routable base URL for the current environment.
-     - local in-cluster default: `http://proxy-public.data-science.svc.cluster.local:8000`
-     - production: your real external domain base URL
-   - Run smoke verification against canonical app path.
+   - Run **internal in-cluster smoke first** (app health truth source).
+   - Then run **external smoke** (real user path) when external base URL is configured.
 
-   Example:
+   Internal-first example:
 
    ```bash
-   BASE_URL="${NEBARI_BROWSER_BASE_URL:-http://proxy-public.data-science.svc.cluster.local:8000}"
+   INTERNAL_BASE_URL="${NEBARI_BROWSER_INTERNAL_BASE_URL:-http://proxy-public}"
+   EXTERNAL_BASE_URL="${NEBARI_BROWSER_BASE_URL:-}"
    APP_PATH="/user/${HUB_USER}/${APP_NAME}/"
 
    pi-browser-smoke \
-     --base-url "$BASE_URL" \
+     --base-url "$INTERNAL_BASE_URL" \
      --app-path "$APP_PATH" \
      --username "$HUB_USER" \
      --hub-api-url "$API_URL" \
      --hub-api-token "$API_TOKEN" \
      --timeout-seconds 120 \
-     --screenshot "/tmp/${APP_NAME}-smoke.png"
+     --screenshot "/tmp/${APP_NAME}-smoke-internal.png"
+   ```
+
+   Optional external follow-up:
+
+   ```bash
+   if [ -n "$EXTERNAL_BASE_URL" ] && [ "$EXTERNAL_BASE_URL" != "$INTERNAL_BASE_URL" ]; then
+     pi-browser-smoke \
+       --base-url "$EXTERNAL_BASE_URL" \
+       --app-path "$APP_PATH" \
+       --username "$HUB_USER" \
+       --hub-api-url "$API_URL" \
+       --hub-api-token "$API_TOKEN" \
+       --timeout-seconds 120 \
+       --screenshot "/tmp/${APP_NAME}-smoke-external.png"
+   fi
    ```
 
    Notes:
@@ -268,13 +288,28 @@ Required checks:
    - page HTTP status is success/redirect (`2xx`/`3xx`),
    - at least one visible DOM node exists in `document.body`.
 
+   External auth-path classification rule:
+   - If internal smoke passes but external smoke lands on IdP/login (Keycloak/OIDC/hub login),
+     classify as `external_auth_path_issue` (not app-runtime failure).
+   - Report deployment as runtime-healthy with external-auth remediation required.
+
    Diagnostic hint:
    - If backend/server readiness is true but browser shows blank/near-empty DOM,
      suspect SPA asset base path or root-relative API fetches (subpath issue), not backend health.
 
 4. **No-browser fallback policy**
-   - Browser smoke is mandatory for completion.
+   - Internal browser smoke is mandatory for completion.
    - If `pi-browser-smoke` is unavailable or cannot run, return `verification_incomplete` and do **not** claim deployment success.
+
+### 5.2) Operational restart sanity check (RECOMMENDED for rebuild/restart flows)
+
+After restarts/redeploys, verify you are testing the new process (not stale binaries):
+- confirm pod/container restart timestamp changed after action,
+- confirm expected executable identity/version (`ps`, `readlink`, `--version`),
+- confirm expected port is listening in the target process,
+- confirm app route responds from the new runtime before browser smoke assertions.
+
+If identity/port checks fail, treat verification as incomplete and re-run deployment/startup.
 
 ---
 
@@ -318,6 +353,10 @@ Checklist:
 ### 7.2) Artifact delivery guidance
 
 Do not depend on temporary pod-local HTTP file servers for cross-pod artifact delivery.
+
+Note:
+- In many environments, egress/network policy blocks ad-hoc or public temporary upload endpoints.
+- If artifact fetch fails due reachability/policy, switch to env-embedded payloads (small/medium) or image mode.
 
 Preferred order:
 1. small bundles: embed via env/file bootstrap
@@ -366,6 +405,8 @@ Common causes:
   payload too large in `app.command`; move payload to env/file/artifact.
 - `fork/exec ... no such file or directory`:
   target server missing artifacts/binary; storage is isolated or bootstrap missing.
+- internal smoke passes but external smoke ends on IdP/hub login:
+  external auth-path issue (gateway/SSO/session bootstrap), not app runtime failure.
 
 ---
 
@@ -390,7 +431,7 @@ Always report:
 8. current server state + next action
 9. verification evidence:
    - Hub ready/pending state snapshot,
-   - browser smoke final URL,
-   - browser smoke HTTP status,
-   - browser smoke page title,
+   - internal browser smoke result (URL/status/title),
+   - external browser smoke result when configured (URL/status/title),
+   - classification (`passed` / `external_auth_path_issue` / `failed`),
    - screenshot file/path (if captured by browser tooling)
