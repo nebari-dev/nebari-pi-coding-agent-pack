@@ -116,8 +116,14 @@ japps_page_template.write_text(
               app.description = "";
             }
 
+            if (typeof opts.name !== "string" || !opts.name.trim()) {
+              opts.name = app.id;
+            }
             if (typeof opts.display_name !== "string" || !opts.display_name.trim()) {
               opts.display_name = app.display_name;
+            }
+            if (typeof opts.description !== "string") {
+              opts.description = app.description;
             }
             if (opts.jhub_app) {
               if (typeof opts.framework !== "string" || !opts.framework.trim()) {
@@ -1137,12 +1143,13 @@ def _normalize_arbitrary_app_user_options(spawner):
         return
 
     app_opts = user_options.get("app")
-    if not isinstance(app_opts, dict):
-        return
-
-    command = str(app_opts.get("command") or "").strip()
-    cwd = str(app_opts.get("cwd") or "").strip()
-    app_env = app_opts.get("env") if isinstance(app_opts.get("env"), dict) else {}
+    command = ""
+    cwd = ""
+    app_env = {}
+    if isinstance(app_opts, dict):
+        command = str(app_opts.get("command") or "").strip()
+        cwd = str(app_opts.get("cwd") or "").strip()
+        app_env = app_opts.get("env") if isinstance(app_opts.get("env"), dict) else {}
 
     if command:
         user_options.setdefault("jhub_app", True)
@@ -1150,10 +1157,20 @@ def _normalize_arbitrary_app_user_options(spawner):
         user_options["custom_command"] = command
 
     if user_options.get("jhub_app"):
+        server_name = str(getattr(spawner, "name", "") or "").strip()
+
+        app_name = str(user_options.get("name") or "").strip()
+        if not app_name:
+            app_name = server_name or "default-server"
+            user_options["name"] = app_name
+
         display_name = str(user_options.get("display_name") or "").strip()
         if not display_name:
-            fallback_display_name = str(getattr(spawner, "name", "") or "").strip()
-            user_options["display_name"] = fallback_display_name
+            user_options["display_name"] = app_name or server_name or "JupyterLab"
+
+        framework = str(user_options.get("framework") or "").strip()
+        if not framework:
+            user_options["framework"] = "custom"
 
     if cwd:
         user_options["filepath"] = cwd
