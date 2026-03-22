@@ -100,11 +100,26 @@ japps_page_template.write_text(
               return app;
             }
             var opts = app.user_options && typeof app.user_options === "object" ? app.user_options : {};
+            var fallbackName = typeof app.name === "string" ? app.name.trim() : "";
+            if (!fallbackName && typeof app.full_name === "string") {
+              var parts = app.full_name.split("/");
+              fallbackName = (parts[parts.length - 1] || "").trim();
+            }
+
+            if (typeof app.id !== "string" || !app.id.trim()) {
+              app.id = fallbackName || "default-server";
+            }
+            if (typeof app.display_name !== "string" || !app.display_name.trim()) {
+              app.display_name = fallbackName || "JupyterLab";
+            }
+            if (typeof app.description !== "string") {
+              app.description = "";
+            }
+
+            if (typeof opts.display_name !== "string" || !opts.display_name.trim()) {
+              opts.display_name = app.display_name;
+            }
             if (opts.jhub_app) {
-              var fallbackName = typeof app.name === "string" ? app.name : "";
-              if (typeof opts.display_name !== "string" || !opts.display_name.trim()) {
-                opts.display_name = fallbackName;
-              }
               if (typeof opts.framework !== "string" || !opts.framework.trim()) {
                 opts.framework = "custom";
               }

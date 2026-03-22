@@ -23,14 +23,29 @@ const candidates = [
 
 // Add Playwright-managed Chromium if available.
 try {
-  const pwRoot = process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/ms-playwright";
-  if (existsSync(pwRoot)) {
+  const roots = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH,
+    "/opt/ms-playwright",
+    `${process.env.HOME || ""}/.cache/ms-playwright`,
+  ].filter(Boolean);
+
+  for (const pwRoot of roots) {
+    if (!existsSync(pwRoot)) continue;
     for (const entry of readdirSync(pwRoot)) {
-      if (!entry.startsWith("chromium-")) continue;
-      const p = join(pwRoot, entry, "chrome-linux", "chrome");
-      if (existsSync(p)) candidates.push(p);
-      const hs = join(pwRoot, entry, "chrome-linux", "headless_shell");
-      if (existsSync(hs)) candidates.push(hs);
+      const isChromium = entry.startsWith("chromium-");
+      const isHeadlessShell = entry.startsWith("chromium_headless_shell-");
+      if (!isChromium && !isHeadlessShell) continue;
+
+      const paths = [
+        join(pwRoot, entry, "chrome-linux", "chrome"),
+        join(pwRoot, entry, "chrome-linux64", "chrome"),
+        join(pwRoot, entry, "chrome-linux", "headless_shell"),
+        join(pwRoot, entry, "chrome-linux64", "headless_shell"),
+        join(pwRoot, entry, "chrome-headless-shell-linux64", "chrome-headless-shell"),
+      ];
+      for (const p of paths) {
+        if (existsSync(p)) candidates.push(p);
+      }
     }
   }
 } catch {}

@@ -17,32 +17,54 @@ Minimal CDP tools for collaborative site exploration.
 
 Start Chrome on `:9222` with remote debugging.
 
+`start.js` auto-detects Chrome/Chromium, including Playwright-managed binaries under `/opt/ms-playwright` and `~/.cache/ms-playwright`. Use `CHROME_BIN` to force a path.
+
 ## Navigate
 
 ```bash
 ./scripts/nav.js https://example.com
 ./scripts/nav.js https://example.com --new
+./scripts/nav.js https://idp.example/auth --url-contains keycloak
 ```
 
 Navigate current tab or open new tab.
+
+Targeting flags (supported by nav/eval/screenshot/click/type/wait):
+- `--url-contains <fragment>`: select tab whose URL contains fragment
+- `--target-id <id>`: use specific CDP target id
+- `--wait-new-tab`: wait for a newly opened tab/page (popup/new-tab auth flows)
+- `--timeout-ms <ms>`: override timeout
 
 ## Evaluate JavaScript
 
 ```bash
 ./scripts/eval.js 'document.title'
 ./scripts/eval.js 'document.querySelectorAll("a").length'
-./scripts/eval.js 'JSON.stringify(Array.from(document.querySelectorAll("a")).map(a => ({ text: a.textContent.trim(), href: a.href })).filter(link => !link.href.startsWith("https://")))'
+./scripts/eval.js --url-contains keycloak 'location.href'
 ```
 
-Execute JavaScript in active tab (async context).  Be careful with string escaping, best to use single quotes.
+Execute JavaScript in selected tab (async context). Be careful with string escaping; single quotes are easiest.
+
+## First-class click/type/wait helpers
+
+```bash
+./scripts/click.js '#kc-login'
+./scripts/type.js '#username' 'nick'
+./scripts/type.js '#password' 'ChangeMe1234!'
+./scripts/wait.js --url-contains '/hub/home'
+./scripts/wait.js --wait-new-tab --url-contains keycloak
+```
+
+These helpers reduce brittle one-off JS snippets and improve auth-flow reliability.
 
 ## Screenshot
 
 ```bash
 ./scripts/screenshot.js
+./scripts/screenshot.js --url-contains '/hub/home'
 ```
 
-Screenshot current viewport, returns temp file path
+Screenshot selected viewport; prints temp file path.
 
 ## Pick Elements
 
