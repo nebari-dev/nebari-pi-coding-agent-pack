@@ -14,6 +14,8 @@ data:
 {{- if .Values.pi.enabled }}
   05-pi-launcher.py: |
 {{ .Files.Get "config/jupyterhub/05-pi-launcher.py" | indent 4 }}
+  06-pi-session-viewer.py: |
+{{ .Files.Get "config/jupyterhub/06-pi-session-viewer.py" | indent 4 }}
   08-pi-home-and-spawn-fixes.py: |
 {{ .Files.Get "config/jupyterhub/08-pi-home-and-spawn-fixes.py" | indent 4 }}
 {{- end }}

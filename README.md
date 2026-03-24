@@ -8,6 +8,7 @@ Helm chart that extends Nebari's data-science JupyterHub stack with a Pi coding-
 - Pi named-server profiles (`pi-small`, `pi-medium`, `pi-large`)
 - Pi home/quick-access UI customizations
 - Optional Pi session sharing RBAC + handlers
+- Optional Pi Session Viewer service (`/services/pi-session-viewer/`, port `10400`)
 - Optional relay subsystem (core + dummy/slack/whatsapp adapters)
 - Shared skills delivered from the Pi runtime image (no PVC sync job)
 
@@ -18,6 +19,9 @@ Helm chart that extends Nebari's data-science JupyterHub stack with a Pi coding-
 - JupyterHub spawns/controls named server `pi` per user.
 - Pi pod serves browser terminal via `jhsingle_native_proxy` + `ttyd` + `pi` CLI.
 - Pi startup includes `--skill /opt/nebari/baked-skills/shared-skills`.
+- Pi startup loads the OpenAI Codex device-code OAuth override extension (`-e /opt/nebari/extensions/openai-codex-device-auth.ts`).
+- Pi startup loads session sharing commands extension (`-e /opt/nebari/extensions/session-share.ts`).
+- Pi startup also loads `pi-self-learning` extension (`-e /usr/local/lib/node_modules/pi-self-learning/extensions/self-learning.ts`).
 
 ## Install
 
@@ -65,6 +69,7 @@ helm upgrade --install data-science-pack . \
 - `jupyterhub.custom.pi-image`
 - `jupyterhub.custom.pi-skills-path`
 - `jupyterhub.custom.pi-coding-agent-dir`
+- `jupyterhub.custom.pi-session-viewer-*` (enable/port/S3 settings)
 - `relay.*`
 
 When relay is enabled, keep these aligned:
@@ -78,6 +83,11 @@ When relay is enabled, keep these aligned:
 
 - `skills/shared-skills/jhub-deploy/SKILL.md`
 - `skills/shared-skills/observability/SKILL.md`
+- `skills/shared-skills/web-browser/SKILL.md`
+- `skills/shared-skills/gog/SKILL.md`
+- `skills/shared-skills/notion/SKILL.md`
+- `skills/shared-skills/video-frames/SKILL.md`
+- `skills/shared-skills/markdown-converter/SKILL.md`
 
 Example:
 

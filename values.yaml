@@ -183,6 +183,24 @@ jupyterhub:
     pi-live-share-enabled: false
     pi-sharing-namespace: ""
     pi-share-session-max-bytes: 1048576
+    pi-session-viewer-enabled: false
+    pi-session-viewer-port: 10400
+    pi-session-viewer-service-name: pi-session-viewer
+    pi-session-viewer-s3-bucket: ""
+    pi-session-viewer-s3-prefix: pi-shares
+    pi-session-viewer-s3-region: us-east-1
+    pi-session-viewer-s3-endpoint: ""
+    pi-session-viewer-s3-access-key-id: ""
+    pi-session-viewer-s3-secret-access-key: ""
+    pi-session-viewer-s3-session-token: ""
+    pi-session-viewer-s3-auto-create-bucket: false
+    pi-session-viewer-db-path: /tmp/pi-session-viewer/shares.db
+    pi-session-viewer-default-expires-hours: 720
+    pi-session-viewer-max-expires-hours: 2160
+    pi-session-viewer-max-session-bytes: 10485760
+    pi-session-viewer-cleanup-interval-seconds: 600
+    pi-session-viewer-hard-delete-grace-hours: 168
+    pi-session-viewer-api-token: ""
     pi-image: quay.io/nebari/pi-agent:latest
     pi-skills-path: /opt/nebari/baked-skills/shared-skills
     pi-hub-api-url: http://hub:8081/hub/api
@@ -260,6 +278,9 @@ jupyterhub:
         - port: 10300
           targetPort: 10300
           name: pi-launcher
+        - port: 10400
+          targetPort: 10400
+          name: pi-session-viewer
 
     networkPolicy:
       enabled: true
@@ -267,6 +288,7 @@ jupyterhub:
         - ports:
             - port: 10202
             - port: 10300
+            - port: 10400
 
   singleuser:
     image:
@@ -290,6 +312,9 @@ jupyterhub:
                 protocol: TCP
           - ports:
               - port: 10300
+                protocol: TCP
+          - ports:
+              - port: 10400
                 protocol: TCP
 
   scheduling:

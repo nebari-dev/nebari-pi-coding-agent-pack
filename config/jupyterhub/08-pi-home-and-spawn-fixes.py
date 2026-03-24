@@ -653,6 +653,10 @@ PI_SKILL_PATH = str(
     )
     or "/opt/nebari/baked-skills/shared-skills"
 )
+PI_SESSION_VIEWER_SERVICE_NAME = str(
+    z2jh.get_config("custom.pi-session-viewer-service-name", "pi-session-viewer") or "pi-session-viewer"
+).strip()
+PI_SESSION_VIEWER_PORT = int(z2jh.get_config("custom.pi-session-viewer-port", 10400) or 10400)
 PI_ENV = {
     # Token is injected by chart via hub env -> singleuser profile env.
     "NEBARI_HUB_API_TOKEN": os.environ.get("PI_M4_TOOLS_API_TOKEN", ""),
@@ -668,12 +672,30 @@ PI_ENV = {
     # Explicit aliases for POC flows inside the Pi terminal.
     "JUPYTERHUB_FULL_API_TOKEN": os.environ.get("PI_M4_TOOLS_API_TOKEN", ""),
     "JUPYTERHUB_FULL_API_URL": str(z2jh.get_config("custom.pi-hub-api-url", "http://hub:8081/hub/api") or "http://hub:8081/hub/api"),
+    # Pi session-viewer endpoint used by /session-share extension.
+    # Use proxy-public service path so singleuser network policies don't need direct hub:10400 access.
+    "PI_SESSION_VIEWER_INTERNAL_URL": f"http://proxy-public/services/{PI_SESSION_VIEWER_SERVICE_NAME}",
     # Keep Pi runtime state outside potentially read-only /home mounts.
     "PI_CODING_AGENT_DIR": str(z2jh.get_config("custom.pi-coding-agent-dir", "/tmp/pi-agent") or "/tmp/pi-agent"),
     # Shared skills are baked into the image.
     "NEBARI_SHARED_SKILLS_MODE": "image",
     "NEBARI_SHARED_SKILLS_DIR": PI_SKILL_PATH,
 }
+PI_SELF_LEARNING_EXTENSION = "/usr/local/lib/node_modules/pi-self-learning/extensions/self-learning.ts"
+PI_OPENAI_CODEX_DEVICE_EXTENSION = "/opt/nebari/extensions/openai-codex-device-auth.ts"
+PI_SESSION_SHARE_EXTENSION = "/opt/nebari/extensions/session-share.ts"
+
+PI_EXTENSION_ARGS = []
+for _ext in [
+    PI_OPENAI_CODEX_DEVICE_EXTENSION,
+    PI_SESSION_SHARE_EXTENSION,
+    PI_SELF_LEARNING_EXTENSION,
+]:
+    if os.path.isfile(_ext):
+        PI_EXTENSION_ARGS.extend(["-e", _ext])
+    else:
+        print(f"pi profile: extension not found, skipping: {_ext}")
+
 PI_CMD = [
     "python",
     "-m",
@@ -695,6 +717,7 @@ PI_CMD = [
     "7681",
     "--",
     "pi",
+    *PI_EXTENSION_ARGS,
     "--skill",
     PI_SKILL_PATH,
 ]

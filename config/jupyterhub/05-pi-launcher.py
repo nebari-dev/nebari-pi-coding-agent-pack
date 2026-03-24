@@ -46,6 +46,12 @@ pi_launcher_py.write_text(
             "yes",
             "on",
         )
+        SHARE_ENABLED = os.environ.get("PI_SHARING_ENABLED", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
         SESSION_SHARE_MAX_BYTES = max(
             1024,
             int(os.environ.get("PI_SHARE_SESSION_MAX_BYTES", "1048576")),
@@ -851,13 +857,6 @@ pi_launcher_py.write_text(
                   </form>
                 </div>
                 <div class="row">
-                  <a class="link" href="{spawn_pending_url}">Spawn status</a>
-                  <a class="link" href="{smart_open_url}">Open Pi (if running)</a>
-                  <a class="link" href="{SERVICE_PREFIX}/share">Share Pi Sessions</a>
-                  <form method="post" action="{SERVICE_PREFIX}/stop">
-                    <input type="hidden" name="_xsrf" value="{xsrf_token}" />
-                    <button class="link" type="submit">Stop Pi</button>
-                  </form>
                   <a class="link" href="/hub/home">Back to Home</a>
                 </div>
               </div>
@@ -1559,21 +1558,27 @@ pi_launcher_py.write_text(
 
         def make_app():
             prefix = re.escape(SERVICE_PREFIX)
+            routes = [
+                (r"^" + prefix + r"/status/?$", StatusHandler),
+                (r"^" + prefix + r"/?$", RootHandler),
+                (r"^" + prefix + r"/open/?$", OpenHandler),
+                (r"^" + prefix + r"/launch/?$", LaunchHandler),
+                (r"^" + prefix + r"/stop/?$", StopHandler),
+                (r"^" + prefix + r"/oauth_callback$", HubOAuthCallbackHandler),
+            ]
+            if SHARE_ENABLED:
+                routes.extend(
+                    [
+                        (r"^" + prefix + r"/share/?$", SharePageHandler),
+                        (r"^" + prefix + r"/share/list/?$", ShareListHandler),
+                        (r"^" + prefix + r"/share/session/?$", ShareSessionCreateHandler),
+                        (r"^" + prefix + r"/share/session/import/?$", ShareSessionImportHandler),
+                        (r"^" + prefix + r"/share/live/?$", ShareLiveCreateHandler),
+                        (r"^" + prefix + r"/share/live/revoke/?$", ShareLiveRevokeHandler),
+                    ]
+                )
             return Application(
-                [
-                    (r"^" + prefix + r"/status/?$", StatusHandler),
-                    (r"^" + prefix + r"/?$", RootHandler),
-                    (r"^" + prefix + r"/open/?$", OpenHandler),
-                    (r"^" + prefix + r"/launch/?$", LaunchHandler),
-                    (r"^" + prefix + r"/stop/?$", StopHandler),
-                    (r"^" + prefix + r"/share/?$", SharePageHandler),
-                    (r"^" + prefix + r"/share/list/?$", ShareListHandler),
-                    (r"^" + prefix + r"/share/session/?$", ShareSessionCreateHandler),
-                    (r"^" + prefix + r"/share/session/import/?$", ShareSessionImportHandler),
-                    (r"^" + prefix + r"/share/live/?$", ShareLiveCreateHandler),
-                    (r"^" + prefix + r"/share/live/revoke/?$", ShareLiveRevokeHandler),
-                    (r"^" + prefix + r"/oauth_callback$", HubOAuthCallbackHandler),
-                ],
+                routes,
                 cookie_secret=os.urandom(32),
             )
 
@@ -1593,6 +1598,15 @@ pi_launcher_service_name = str(z2jh.get_config("custom.pi-launcher-service-name"
 pi_live_share_enabled_cfg = z2jh.get_config("custom.pi-live-share-enabled", False)
 pi_live_share_enabled = "1" if bool(pi_live_share_enabled_cfg) else "0"
 pi_sharing_namespace = str(z2jh.get_config("custom.pi-sharing-namespace", "") or "").strip()
+pi_sharing_enabled_cfg = z2jh.get_config("custom.pi-sharing-enabled", None)
+pi_sharing_enabled_bool = (
+    bool(pi_sharing_enabled_cfg)
+    if pi_sharing_enabled_cfg is not None
+    else bool(pi_sharing_namespace)
+)
+if not pi_sharing_enabled_bool:
+    pi_sharing_namespace = ""
+pi_sharing_enabled = "1" if pi_sharing_enabled_bool else "0"
 pi_share_session_max_bytes = str(z2jh.get_config("custom.pi-share-session-max-bytes", 1048576))
 pi_coding_agent_dir = str(z2jh.get_config("custom.pi-coding-agent-dir", "/tmp/pi-agent") or "/tmp/pi-agent").strip()
 
@@ -1637,6 +1651,8 @@ launcher_env = {
     "JUPYTERHUB_OAUTH_CALLBACK_URL": pi_launcher_oauth_redirect_uri,
     # Phase 2 feature flag: off by default unless custom.pi-live-share-enabled=true.
     "PI_LIVE_SHARE_ENABLED": pi_live_share_enabled,
+    # Session-share UI/routes. Defaults to enabled only when namespace is configured.
+    "PI_SHARING_ENABLED": pi_sharing_enabled,
     "PI_SHARE_SESSION_MAX_BYTES": pi_share_session_max_bytes,
     "PI_CODING_AGENT_DIR": pi_coding_agent_dir,
     "PI_PROFILE_SMALL_SPEC": pi_profile_small_spec,
@@ -1661,23 +1677,26 @@ c.JupyterHub.services.append(
     }
 )
 
+pi_launcher_scopes = [
+    # Allow creating/starting/stopping servers for the current user.
+    # For demo speed/simplicity we grant admin:servers rather than acting as the user.
+    "admin:servers",
+    "admin:server_state",
+    "read:users",
+    "read:users:name",
+    "read:groups",
+    "list:groups",
+    "access:services",
+    "read:services",
+    "list:services",
+]
+if pi_sharing_enabled_bool:
+    pi_launcher_scopes.append("shares")
+
 pi_launcher_role = {
     "name": "pi-launcher-service-role",
     "services": [pi_launcher_service_name],
-    "scopes": [
-        # Allow creating/starting/stopping servers for the current user.
-        # For demo speed/simplicity we grant admin:servers rather than acting as the user.
-        "admin:servers",
-        "admin:server_state",
-        "read:users",
-        "read:users:name",
-        "read:groups",
-        "list:groups",
-        "shares",
-        "access:services",
-        "read:services",
-        "list:services",
-    ],
+    "scopes": pi_launcher_scopes,
 }
 if not c.JupyterHub.load_roles:
     c.JupyterHub.load_roles = []
