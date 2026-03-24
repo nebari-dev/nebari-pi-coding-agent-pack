@@ -64,6 +64,8 @@ pi_session_viewer_py.write_text(
         HARD_DELETE_GRACE_HOURS = int(os.environ.get("PI_SESSION_VIEWER_HARD_DELETE_GRACE_HOURS", "168") or "168")
 
         SHARE_ID_RE = re.compile(r"^[a-z0-9-]{6,64}$")
+        VIEW_LINK_TTL_SECONDS = int(os.environ.get("PI_SESSION_VIEWER_VIEW_LINK_TTL_SECONDS", "600") or "600")
+        VIEWER_SIGNING_KEY = hashlib.sha256(f"{API_TOKEN}|{API_AUTH_TOKEN}|{SERVICE_PREFIX}".encode("utf-8")).digest()
 
 
         def utcnow() -> datetime.datetime:
@@ -115,6 +117,33 @@ pi_session_viewer_py.write_text(
             if not SHARE_ID_RE.fullmatch(value):
                 return ""
             return value
+
+
+        def _b64url_decode(text: str) -> bytes:
+            pad = "=" * ((4 - (len(text) % 4)) % 4)
+            return base64.urlsafe_b64decode((text + pad).encode("ascii"))
+
+
+        def make_view_token(share_id: str) -> str:
+            exp = int(utcnow().timestamp()) + max(30, VIEW_LINK_TTL_SECONDS)
+            payload = f"{share_id}:{exp}"
+            sig = hmac.new(VIEWER_SIGNING_KEY, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+            raw = f"{exp}:{sig}".encode("utf-8")
+            return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+        def verify_view_token(share_id: str, token: str) -> bool:
+            try:
+                raw = _b64url_decode((token or "").strip()).decode("utf-8")
+                exp_s, sig = raw.split(":", 1)
+                exp = int(exp_s)
+            except Exception:
+                return False
+            if exp < int(utcnow().timestamp()):
+                return False
+            payload = f"{share_id}:{exp}"
+            expect = hmac.new(VIEWER_SIGNING_KEY, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+            return hmac.compare_digest(sig, expect)
 
 
         def hub_request(method: str, path: str, *, json_body=None):
@@ -802,6 +831,9 @@ pi_session_viewer_py.write_text(
                 sid = normalize_share_id(share_id)
                 if not sid:
                     raise HTTPError(404)
+                user = self.resolve_user()
+                self.require_share_access(sid, user)
+                view_token = make_view_token(sid)
                 page = f"""<!DOCTYPE html>
                 <html lang=\"en\" data-theme=\"dark\">
                 <head>
@@ -941,6 +973,7 @@ pi_session_viewer_py.write_text(
                     (function() {{
                       const SHARE_ID = {json.dumps(sid)};
                       const SERVICE_PREFIX = {json.dumps(SERVICE_PREFIX)};
+                      const VIEW_TOKEN = {json.dumps(view_token)};
 
                       const loadingEl = document.getElementById("loading");
                       const errorEl = document.getElementById("error");
@@ -964,7 +997,7 @@ pi_session_viewer_py.write_text(
                       }}
 
                       const urlParams = location.search ? location.search.substring(1) : "";
-                      const exportUrl = SERVICE_PREFIX + "/api/shares/" + encodeURIComponent(SHARE_ID) + "/export/session.html";
+                      const exportUrl = SERVICE_PREFIX + "/api/shares/" + encodeURIComponent(SHARE_ID) + "/export/session.html?vt=" + encodeURIComponent(VIEW_TOKEN);
 
                       fetch(exportUrl)
                         .then(function(res) {{
@@ -1225,10 +1258,29 @@ pi_session_viewer_py.write_text(
 
 
         class ShareExportHtmlHandler(BaseHandler):
-            @authenticated
             def get(self, share_id: str):
-                user = self.resolve_user()
-                rec = self.require_share_access(share_id, user)
+                sid = normalize_share_id(share_id)
+                if not sid:
+                    raise HTTPError(404)
+                rec = get_share(sid)
+                if not rec:
+                    raise HTTPError(404, "share not found")
+                if share_revoked(rec):
+                    raise HTTPError(410, "share revoked")
+                if share_expired(rec):
+                    raise HTTPError(410, "share expired")
+
+                # Preferred path for browser viewer page: short-lived signed token
+                # minted by ViewerPageHandler after ACL check.
+                view_token = (self.get_argument("vt", "") or "").strip()
+                if view_token:
+                    if not verify_view_token(sid, view_token):
+                        raise HTTPError(401, "invalid viewer token")
+                else:
+                    # Fallback for API/service-token callers.
+                    user = self.resolve_user()
+                    self.require_share_access(sid, user)
+
                 try:
                     text, _entries = load_entries_for_share(rec)
                 except Exception as exc:
