@@ -1225,6 +1225,7 @@ pi_session_viewer_py.write_text(
 
 
         class ShareExportHtmlHandler(BaseHandler):
+            @authenticated
             def get(self, share_id: str):
                 user = self.resolve_user()
                 rec = self.require_share_access(share_id, user)
