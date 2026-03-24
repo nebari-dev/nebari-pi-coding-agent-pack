@@ -129,6 +129,9 @@ pi_session_viewer_py.write_text(
 
         def get_user(username: str) -> Dict[str, Any]:
             response = hub_request("GET", f"/users/{quote(username)}")
+            if response.status_code == 404:
+                # Unknown users should not crash requests; treat as non-admin with no groups.
+                return {"name": username, "groups": [], "admin": False}
             if response.status_code != 200:
                 raise RuntimeError(f"Unable to resolve user {username!r}: status={response.status_code} body={response.text}")
             return response.json()
@@ -710,12 +713,19 @@ pi_session_viewer_py.write_text(
 
             def browser_user(self) -> Optional[Dict[str, Any]]:
                 raw = self.current_user
-                if not raw:
-                    return None
-                if isinstance(raw, dict):
-                    username = str(raw.get("name") or "").strip()
-                else:
-                    username = str(raw).strip()
+                username = ""
+                if raw:
+                    if isinstance(raw, dict):
+                        username = str(raw.get("name") or "").strip()
+                    else:
+                        username = str(raw).strip()
+                # Fallback for proxied authenticated requests where service oauth
+                # cookies are missing but JupyterHub proxy forwards identity headers.
+                if not username:
+                    username = (
+                        (self.request.headers.get("X-Forwarded-User", "") or "").strip()
+                        or (self.request.headers.get("X-JupyterHub-User", "") or "").strip()
+                    )
                 if not username:
                     return None
                 return {
