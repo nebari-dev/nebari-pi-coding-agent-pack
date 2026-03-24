@@ -684,18 +684,6 @@ PI_ENV = {
 PI_SELF_LEARNING_EXTENSION = "/usr/local/lib/node_modules/pi-self-learning/extensions/self-learning.ts"
 PI_OPENAI_CODEX_DEVICE_EXTENSION = "/opt/nebari/extensions/openai-codex-device-auth.ts"
 PI_SESSION_SHARE_EXTENSION = "/opt/nebari/extensions/session-share.ts"
-
-PI_EXTENSION_ARGS = []
-for _ext in [
-    PI_OPENAI_CODEX_DEVICE_EXTENSION,
-    PI_SESSION_SHARE_EXTENSION,
-    PI_SELF_LEARNING_EXTENSION,
-]:
-    if os.path.isfile(_ext):
-        PI_EXTENSION_ARGS.extend(["-e", _ext])
-    else:
-        print(f"pi profile: extension not found, skipping: {_ext}")
-
 PI_CMD = [
     "python",
     "-m",
@@ -717,7 +705,12 @@ PI_CMD = [
     "7681",
     "--",
     "pi",
-    *PI_EXTENSION_ARGS,
+    "-e",
+    PI_OPENAI_CODEX_DEVICE_EXTENSION,
+    "-e",
+    PI_SESSION_SHARE_EXTENSION,
+    "-e",
+    PI_SELF_LEARNING_EXTENSION,
     "--skill",
     PI_SKILL_PATH,
 ]
