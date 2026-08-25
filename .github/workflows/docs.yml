@@ -1,0 +1,78 @@
+name: Docs
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'scripts/check-links.sh', '.github/workflows/docs.yml']
+  pull_request:
+    paths: ['docs/**', 'scripts/check-links.sh', '.github/workflows/docs.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  PACK_SLUG: pi-coding-agent-pack
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install deps
+        working-directory: docs
+        run: npm ci
+
+      - name: Compute site, base, and deploy branch
+        id: base
+        env:
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "site=https://packs.nebari.dev" >> "$GITHUB_OUTPUT"
+            echo "base=/${PACK_SLUG}/" >> "$GITHUB_OUTPUT"
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+          else
+            ALIAS=$(printf '%s' "$HEAD_REF" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+            echo "site=https://${ALIAS}.${PACK_SLUG}.pages.dev" >> "$GITHUB_OUTPUT"
+            echo "base=/" >> "$GITHUB_OUTPUT"
+            echo "branch=${HEAD_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        working-directory: docs
+        env:
+          SITE: ${{ steps.base.outputs.site }}
+          BASE: ${{ steps.base.outputs.base }}
+        run: npm run build
+
+      - name: Check internal links
+        env:
+          BASE: ${{ steps.base.outputs.base }}
+        run: SKIP_BUILD=1 bash scripts/check-links.sh
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy docs/dist --project-name=${{ env.PACK_SLUG }} --branch=${{ steps.base.outputs.branch }}
+
+      - name: Comment preview URL
+        if: ${{ github.event_name == 'pull_request' && steps.deploy.outcome == 'success' }}
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
+        with:
+          comment-tag: docs-preview
+          message: |
+            📄 **Docs preview** for `${{ github.event.pull_request.head.ref }}`:
+            ${{ steps.deploy.outputs.pages-deployment-alias-url }}

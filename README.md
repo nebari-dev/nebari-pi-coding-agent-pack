@@ -104,6 +104,18 @@ Then set your Helm values to the pushed image tag/digest:
 - `pi.image.tag`
 - `jupyterhub.custom.pi-image` (prefer digest pin)
 
+## Documentation
+
+An experimental [Astro](https://astro.build) + [Starlight](https://starlight.astro.build) docs site lives in [`docs/`](docs/) (content coming soon). Run it locally with:
+
+```bash
+cd docs
+npm ci
+npm run dev
+```
+
+See [`docs/README.md`](docs/README.md) for details.
+
 ## Notes
 
 - Legacy PVC-based shared-skills sync is removed from runtime flow.
