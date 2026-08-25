@@ -42,6 +42,10 @@ owner: nenb
 # If true, you MUST also set sunset_date below.
 deprecated: false
 
+# Whether the pack ships a docs site (docs/ Astro + Starlight, published to
+# the packs portal).
+docs_site: true
+
 # ----------------------------------------------------------------------------
 # Conditionally required
 # ----------------------------------------------------------------------------
@@ -88,9 +92,8 @@ product_owner: null
 #   on cluster provisioning.
 
 # Links shown alongside the pack on the dashboard. Both are optional.
-# links:
-#   Extended documentation (NOT the README - that is auto-linked from the
-#   pack name column).
-#   docs: https://example.com/docs/my-pack
-#   Recorded or live demo URL.
-#   demo: https://example.com/demos/my-pack
+#   docs: Extended documentation (NOT the README - that is auto-linked from
+#   the pack name column).
+#   demo: Recorded or live demo URL.
+links:
+  docs: https://packs.nebari.dev/pi-coding-agent-pack/
